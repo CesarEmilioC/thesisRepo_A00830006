@@ -1,7 +1,14 @@
+import sys
+import os
+# Agrega requirements/tf_pose al PYTHONPATH
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'openPoseRequirements')))
+# Agrega requirements/tf_pose al PYTHONPATH
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'Modules')))
+
 import argparse
 import datetime
-import module_poseEstimation
-import module_grapher
+import Modules.module_poseEstimation as module_poseEstimation
+import Modules.module_grapher as module_grapher
 
 def main():
     parser = argparse.ArgumentParser("Pose Estimation Tool", description="Herramienta para estimación de pose y graficación de coordenadas")
@@ -19,7 +26,7 @@ def main():
     # Subparser para graficar los datos
     subparser_plot = subparsers.add_parser("plot", help="Genera gráficas a partir de los datos guardados en coordenadas.json")
     subparser_plot.add_argument("--file", type=str, required=True, help="Ruta del archivo JSON con coordenadas (ej. coordenadas.json)")
-    subparser_plot.set_defaults(func=module_grapher.run_plot)
+    subparser_plot.set_defaults(func=module_grapher.plot_coordinates)
 
     args = parser.parse_args()
 

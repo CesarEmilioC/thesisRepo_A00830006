@@ -2,11 +2,16 @@ import argparse
 import logging
 import time
 import json
-
+import os
 import cv2
 
-from tf_pose.estimator import TfPoseEstimator
-from tf_pose.networks import get_graph_path, model_wh
+from openPoseRequirements.tf_pose.estimator import TfPoseEstimator
+from openPoseRequirements.tf_pose.networks import get_graph_path, model_wh
+
+# Ruta absoluta al directorio raíz del proyecto
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+# Ruta a la carpeta Results
+results_dir = os.path.join(ROOT_DIR, 'Results')
 
 
 def run_pose_estimation(args):
@@ -120,7 +125,10 @@ def run_pose_estimation(args):
             break
 
     cv2.destroyAllWindows()
-
+    
     # Guardar datos en JSON
-    with open("coordenadas.json", "w") as file:
+    video_name = args.camera[args.camera.rfind("/") + 1:]
+    coordinates_dir = os.path.join(results_dir, f'coordenadas_{video_name}.json')
+
+    with open(coordinates_dir, "w") as file:
         json.dump(coords, file, indent=4)
