@@ -14,7 +14,7 @@ To replicate the development environment on another machine:
 
 1. **Clone the repository**:
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/CesarEmilioC/thesisRepo_A00830006.git
    cd THESISREPO_A00830006
    ```
 
