@@ -127,7 +127,10 @@ def run_pose_estimation(args):
     cv2.destroyAllWindows()
     
     # Guardar datos en JSON
-    video_name = args.camera[args.camera.rfind("/") + 1:]
+    path = args.camera
+    start = path.rfind("\\") + 1
+    end = path.rfind(".mp4")
+    video_name = path[start:end]
     coordinates_dir = os.path.join(results_dir, f'coordenadas_{video_name}.json')
 
     with open(coordinates_dir, "w") as file:
