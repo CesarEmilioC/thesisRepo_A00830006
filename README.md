@@ -130,9 +130,9 @@ Videos/
 
 - `Original Videos`: Raw recorded videos of players performing _bandeja_ shots.  
 - `Clips`: Extracted clips from the original videos, each annotated with a grade given by a professional padel player.  
-- `Original Video Cuts`: JSON files containing timestamp metadata and grading for clips to be cut from the original videos.  
+- `Original Video Cuts`: JSON files containing metadata, timetstamps and grading for clips to be cut from the original videos.  
 - `createClips.py`: Python function to automatically generate clips from original videos into their respective player folders.  
-- `playerSamples_trainingData.xls`: Excel file with metadata and evaluation grades for all 10 players in the dataset.  
+- `playerSamples_trainingData.xls`: Excel file with metadata related to all 10 players in the dataset.  
 
 ---
 
