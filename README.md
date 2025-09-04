@@ -13,64 +13,126 @@ A user-friendly digital interface delivers instant feedback and highlights techn
 To replicate the development environment on another machine:
 
 1. Clone the repository:
-   ```bash
-   git clone https://github.com/CesarEmilioC/thesisRepo_A00830006.git
+   git clone https://github.com/CesarEmilioC/thesisRepo_A00830006.git  
    cd THESISREPO_A00830006
-   ```
 
 2. Create the Conda environment from the YAML file:
-   ```bash
    conda env create -f environment.yml
-   ```
 
 3. Activate the environment:
-   ```bash
    conda activate tf1
-   ```
 
-4. (Optional) Install additional pip packages:
-   If you are using `requirements.txt` for pip-only dependencies:
-   ```bash
+4. (Optional) Install additional pip packages:  
+   If you are using `requirements.txt` for pip-only dependencies:  
    pip install -r requirements.txt
-   ```
 
 This ensures that all dependencies and versions used in development are reproduced accurately.
 
 ---
 
-## 📁 Project Structure
+## 📁 Project Structure (GitHub Repository)
 
-```
-THESISREPO_A00830006/
-│
-├── Results/
-│
-├── Source/
-│   ├── Modules/
-│   │   ├── __pycache__/
-│   │   ├── module_grapher.py
-│   │   ├── module_LSTMmodel.py
-│   │   ├── module_poseEstimation.py
-│   │   ├── module_train.py
-│   │   └── module_test.py
-│   ├── openPoseRequirements/
-│   └── main.py
-│
-├── testVideos/
-│
-├── environment.yml
-├── requirements.txt
-└── README.md
-```
+THESISREPO_A00830006/  
+│  
+├── Samples/  
+│   ├── clipSamples/  
+│   │   ├── player1_part1_clip0_grade7.json  
+│   │   ├── player1_part1_clip1_grade6.json  
+│   │   ...  
+│   │   └── player10_partX_clipZ_gradeY.json  
+│   │  
+│   └── coordinateSamples/  
+│       ├── player1_part1_clip0_grade7.json  
+│       ├── player1_part1_clip1_grade6.json  
+│       ...  
+│       └── player10_partX_clipZ_gradeY.json  
+│  
+├── Source/  
+│   ├── Modules/  
+│   │   ├── __pycache__/  
+│   │   ├── module_grapher.py  
+│   │   ├── module_LSTMmodel.py  
+│   │   ├── module_poseEstimation.py  
+│   │   ├── module_train.py  
+│   │   └── module_test.py  
+│   ├── openPoseRequirements/  
+│   └── main.py  
+│  
+├── environment.yml  
+├── requirements.txt  
+└── README.md  
 
-- `Source/Modules/`: Contains all functional Python modules for data processing, model training/testing, pose estimation, and visualization.
-- `Source/main.py`: The main script to execute the system pipeline using command-line arguments.
-- `openPoseRequirements/`: Contains setup and dependencies related to OpenPose.
-- `Results/`: Stores output data such as joint coordinates.
-- `testVideos/`: Directory for input test videos.
-- `environment.yml`: Conda environment specification.
-- `requirements.txt`: Additional Python dependencies (pip-based).
-- `README.md`: Project documentation (you are here!).
+- `Source/Modules/`: Contains all functional Python modules for data processing, model training/testing, pose estimation, and visualization.  
+- `Source/main.py`: Main script to execute the system pipeline using command-line arguments.  
+- `openPoseRequirements/`: Contains setup and dependencies related to OpenPose.  
+- `Samples/coordinateSamples`: Stores output JSON files containing metadata and joint coordinates from processed clips.  
+- `Samples/clipSamples`: Stores sample input test video clips for development and testing.  
+- `environment.yml`: Conda environment specification.  
+- `requirements.txt`: Additional pip-based dependencies.  
+- `README.md`: Project documentation (you are here!).  
+
+---
+
+## 🎥 Video Dataset (Independent from GitHub Repository)
+
+The **Videos** folder is hosted independently on OneDrive and is not part of this GitHub repository.  
+You can access it here:  
+
+🔗 [Access Video Data Here](https://tecmx-my.sharepoint.com/:f:/g/personal/a00830006_tec_mx/EuvOsh32lh5El-Aitld6c9UBhsb97xw9q9HbERRJAxOjwg?e=PuiBWJ)
+
+### Folder Structure
+
+Videos/  
+│  
+├── Original Videos/  
+│   ├── player1/  
+│   │   ├── player1_part1.mp4  
+│   │   ├── player1_part2.mp4  
+│   │   ...  
+│   ├── player2/  
+│   │   ├── player2_part1.mp4  
+│   │   ...  
+│   ...  
+│   └── player10/  
+│       ├── player10_part1.mp4  
+│       ...  
+│  
+├── Clips/  
+│   ├── player1/  
+│   │   ├── player1_part1_clip1_gradeY.mp4  
+│   │   ├── player1_part1_clip2_gradeY.mp4  
+│   │   ...  
+│   ├── player2/  
+│   │   ├── player2_part1_clip1_gradeY.mp4  
+│   │   ...  
+│   ...  
+│   └── player10/  
+│       ├── player10_partX_clipZ_gradeY.mp4  
+│       ...  
+│  
+├── Original Video Cuts/  
+│   ├── player1/  
+│   │   ├── player1_part1.json  
+│   │   ├── player1_part2.json  
+│   │   ...  
+│   ├── player2/  
+│   │   ├── player2_part1.json  
+│   │   ...  
+│   ...  
+│   └── player10/  
+│       ├── player10_partX.json  
+│       ...  
+│  
+├── createClips.py  
+└── playerSamples_trainingData.xls  
+
+### Folder Descriptions
+
+- `Original Videos`: Raw recorded videos of players performing _bandeja_ shots.  
+- `Clips`: Extracted clips from the original videos, each annotated with a grade given by a professional padel player.  
+- `Original Video Cuts`: JSON files containing timestamp metadata and grading for clips to be cut from the original videos.  
+- `createClips.py`: Python function to automatically generate clips from original videos into their respective player folders.  
+- `playerSamples_trainingData.xls`: Excel file with metadata and evaluation grades for all 10 players in the dataset.  
 
 ---
 
@@ -78,27 +140,23 @@ THESISREPO_A00830006/
 
 The `main.py` script uses a command-line interface via `argparse` to allow modular execution of the system components. You can run specific tasks such as pose extraction or coordinate plotting by providing the appropriate command-line flags.
 
-### 🔧 Example Commands
+### Example Commands
 
-**To extract pose data from a test video using OpenPose:**
-```bash
-cd Source
-python main.py pose --camera ..\testVideos\<video_filename>.mp4
-```
+**To extract pose data from a test video using OpenPose:**  
+cd Source  
+python main.py pose --camera ..\Samples\clipSamples\<video_filename>.mp4  
 
-This will process the input video and save the extracted joint coordinates (shoulder, elbow, wrist) to a Python file inside the `Results/` directory.
+This will process the input video and save the extracted joint coordinates (shoulder, elbow, wrist) to a JSON file inside the `Samples/coordinateSamples` directory.
 
 ---
 
-**To visualize a coordinate file (previously extracted):**
-```bash
-cd Source
-python main.py plot --file ..\Results\<coordinate_filename>.py
-```
+**To visualize a coordinate file (previously extracted):**  
+cd Source  
+python main.py plot --file ..\Samples\coordinateSamples\<coordinate_filename>.json  
 
 This generates a visual representation of the movement trajectory from the coordinate file. It is useful for comparing technical patterns and analyzing shot quality.
 
-> More commands (e.g., training or testing the LSTM model) will be added as development progresses.
+> More commands (e.g., training or testing the LSTM model) will be added as development progresses.  
 
 ---
 
@@ -109,5 +167,4 @@ Master’s Thesis Student – ITESM
 
 **Marcial Roberto Leyva Fernández**  
 Thesis Advisor  
-School of Engineering and Sciences – Tecnológico de Monterrey
-        
+School of Engineering and Sciences – Tecnológico de Monterrey  

@@ -11,35 +11,35 @@ def plot_coordinates(args):
         data = json.load(file)
 
     # Extraer coordenadas
-    neck_coords = np.array(data["Nuca"])
+    pelvis_coords = np.array(data["Pelvis"])
     wrist_coords = np.array(data["Mano Derecha Original"])
     wrist_relative_coords = np.array(data["Mano Derecha Referencia"])
     timestamps = np.array(data["timestamps"])
 
     # Crear una escala de colores para representar el orden temporal
-    num_points = len(neck_coords)
-    colors_neck = cm.Blues(np.linspace(0.3, 1, num_points))   # Azul para la nuca
+    num_points = len(pelvis_coords)
+    colors_pelvis = cm.Blues(np.linspace(0.3, 1, num_points))   # Azul para la pelvis
     colors_wrist = cm.Reds(np.linspace(0.3, 1, num_points))   # Rojo para la muñeca original
     colors_wrist_relative = cm.Greens(np.linspace(0.3, 1, num_points))  # Verde para la muñeca relativa
 
     # Crear figura original con 2 subgráficos
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
 
-    # Plot 1: Nuca y muñeca en coordenadas originales
-    axs[0].set_title("Coordenadas Originales (Nuca y Muñeca)")
+    # Plot 1: Pelvis y muñeca en coordenadas originales
+    axs[0].set_title("Coordenadas Originales (Pelvis y Muñeca)")
     for i in range(num_points - 1):
-        axs[0].plot([neck_coords[i, 0], neck_coords[i + 1, 0]],
-                    [neck_coords[i, 1], neck_coords[i + 1, 1]], color=colors_neck[i])
+        axs[0].plot([pelvis_coords[i, 0], pelvis_coords[i + 1, 0]],
+                    [pelvis_coords[i, 1], pelvis_coords[i + 1, 1]], color=colors_pelvis[i])
         axs[0].plot([wrist_coords[i, 0], wrist_coords[i + 1, 0]],
                     [wrist_coords[i, 1], wrist_coords[i + 1, 1]], color=colors_wrist[i])
 
-    axs[0].scatter(neck_coords[:, 0], neck_coords[:, 1], c=colors_neck, label="Nuca", s=20)
+    axs[0].scatter(pelvis_coords[:, 0], pelvis_coords[:, 1], c=colors_pelvis, label="Pelvis", s=20)
     axs[0].scatter(wrist_coords[:, 0], wrist_coords[:, 1], c=colors_wrist, label="Muñeca", s=20)
     axs[0].set_aspect('equal')
     axs[0].legend()
 
-    # Plot 2: Muñeca con referencia a la nuca
-    axs[1].set_title("Coordenadas Relativas (Muñeca - Nuca)")
+    # Plot 2: Muñeca con referencia a la Pelvis
+    axs[1].set_title("Coordenadas Relativas (Muñeca - Pelvis)")
     for i in range(num_points - 1):
         axs[1].plot([wrist_relative_coords[i, 0], wrist_relative_coords[i + 1, 0]],
                     [wrist_relative_coords[i, 1], wrist_relative_coords[i + 1, 1]], color=colors_wrist_relative[i])
