@@ -32,6 +32,7 @@ This ensures that all dependencies and versions used in development are reproduc
 
 ## 📁 Project Structure (GitHub Repository)
 
+```bash
 THESISREPO_A00830006/  
 │  
 ├── Samples/  
@@ -61,6 +62,7 @@ THESISREPO_A00830006/
 ├── environment.yml  
 ├── requirements.txt  
 └── README.md  
+```
 
 - `Source/Modules/`: Contains all functional Python modules for data processing, model training/testing, pose estimation, and visualization.  
 - `Source/main.py`: Main script to execute the system pipeline using command-line arguments.  
@@ -80,6 +82,7 @@ It contains the raw recordings, pre-cut clips organized by player and part, and 
 
 ### Folder Structure (updated with `part1`, `part2`, ... inside `Clips/`)
 
+```bash
 Videos/
 │
 ├── Original Videos/
@@ -140,6 +143,7 @@ Videos/
 │
 ├── createClips.py
 └── playerSamples_trainingData.xls
+```
 
 ### Naming Conventions
 
