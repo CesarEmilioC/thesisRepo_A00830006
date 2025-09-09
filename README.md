@@ -75,56 +75,83 @@ THESISREPO_A00830006/
 
 ## 🎥 Video Dataset (Independent from GitHub Repository)
 
-The **Videos** folder is hosted independently on OneDrive and is not part of this GitHub repository.  
-You can access it here:  
+The **Videos** folder is hosted independently on OneDrive (not tracked in Git).  
+It contains the raw recordings, pre-cut clips organized by player and part, and the JSON timestamp files used to generate clips.
 
-🔗 [Access Video Data Here](https://tecmx-my.sharepoint.com/:f:/g/personal/a00830006_tec_mx/EuvOsh32lh5El-Aitld6c9UBhsb97xw9q9HbERRJAxOjwg?e=PuiBWJ)
+### Folder Structure (updated with `part1`, `part2`, ... inside `Clips/`)
 
-### Folder Structure
+Videos/
+│
+├── Original Videos/
+│   ├── player1/
+│   │   ├── player1_part1.mp4
+│   │   ├── player1_part2.mp4
+│   │   ...
+│   ├── player2/
+│   │   ├── player2_part1.mp4
+│   │   ...
+│   ...
+│   └── player10/
+│       ├── player10_part1.mp4
+│       ...
+│
+├── Clips/
+│   ├── player1/
+│   │   ├── part1/
+│   │   │   ├── player1_part1_clip1_gradeY.mp4
+│   │   │   ├── player1_part1_clip2_gradeX.mp4
+│   │   │   ...
+│   │   ├── part2/
+│   │   │   ├── player1_part2_clip1_gradeY.mp4
+│   │   │   ...
+│   │   ...
+│   ├── player2/
+│   │   ├── part1/
+│   │   │   ├── player2_part1_clip1_gradeY.mp4
+│   │   │   ...
+│   │   ├── part2/
+│   │   │   ├── player2_part2_clip1_gradeZ.mp4
+│   │   │   ...
+│   │   ...
+│   ...
+│   └── player10/
+│       ├── part1/
+│       │   ├── player10_part1_clip1_gradeY.mp4
+│       │   │   ...
+│       ├── part2/
+│       │   ├── player10_part2_clip1_gradeX.mp4
+│       │   │   ...
+│       ...
+│
+├── Original Video Cuts/
+│   ├── player1/
+│   │   ├── player1_part1.json
+│   │   ├── player1_part2.json
+│   │   ...
+│   ├── player2/
+│   │   ├── player2_part1.json
+│   │   ...
+│   ...
+│   └── player10/
+│       ├── player10_part1.json
+│       ├── player10_part2.json
+│       ├── player10_part3.json
+│       ...
+│
+├── createClips.py
+└── playerSamples_trainingData.xls
 
-Videos/  
-│  
-├── Original Videos/  
-│   ├── player1/  
-│   │   ├── player1_part1.mp4  
-│   │   ├── player1_part2.mp4  
-│   │   ...  
-│   ├── player2/  
-│   │   ├── player2_part1.mp4  
-│   │   ...  
-│   ...  
-│   └── player10/  
-│       ├── player10_part1.mp4  
-│       ...  
-│  
-├── Clips/  
-│   ├── player1/  
-│   │   ├── player1_part1_clip1_gradeY.mp4  
-│   │   ├── player1_part1_clip2_gradeY.mp4  
-│   │   ...  
-│   ├── player2/  
-│   │   ├── player2_part1_clip1_gradeY.mp4  
-│   │   ...  
-│   ...  
-│   └── player10/  
-│       ├── player10_partX_clipZ_gradeY.mp4  
-│       ...  
-│  
-├── Original Video Cuts/  
-│   ├── player1/  
-│   │   ├── player1_part1.json  
-│   │   ├── player1_part2.json  
-│   │   ...  
-│   ├── player2/  
-│   │   ├── player2_part1.json  
-│   │   ...  
-│   ...  
-│   └── player10/  
-│       ├── player10_partX.json  
-│       ...  
-│  
-├── createClips.py  
-└── playerSamples_trainingData.xls  
+### Naming Conventions
+
+- Players: `player1` ... `player10`
+- Original videos: `player{N}_part{M}.mp4`
+- Cut definitions (JSON): `player{N}_part{M}.json`
+- Clips: stored under `Clips/player{N}/part{M}/`
+  - Filenames: `player{N}_part{M}_clip{K}_grade{G}.mp4`
+    - `N`: player id (1–10)
+    - `M`: part number (1, 2, …)
+    - `K`: sequential clip index within that part (starting from 1)
+    - `G`: grade assigned by a professional (e.g., 6, 7, 8, 9)
 
 ### Folder Descriptions
 

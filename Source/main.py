@@ -16,7 +16,8 @@ def main():
 
     # Subparser para la estimación de pose
     subparser_pose = subparsers.add_parser("pose", help="Realiza la estimación de pose en tiempo real desde la cámara o desde un video")
-    subparser_pose.add_argument("--camera", type=str, default="0", help="Índice de cámara o ruta del video. Default=0 (cámara por defecto)")
+    subparser_pose.add_argument("--camera", type=str, default="0", help="Índice de cámara o ruta de un único video a analizar. Default=0 (cámara por defecto)")
+    subparser_pose.add_argument("--directory", default="0", type=str, help="Ruta a carpeta con múltiples videos a analizar.")
     subparser_pose.add_argument("--resize", type=str, default="0x0", help="Tamaño de redimensionamiento para las imágenes (ej. 432x368)")
     subparser_pose.add_argument("--resize-out-ratio", type=float, default=4.0, help="Proporción para redimensionar heatmaps")
     subparser_pose.add_argument("--model", type=str, default="mobilenet_thin", help="Modelo a usar: cmu / mobilenet_thin / mobilenet_v2_large / mobilenet_v2_small")

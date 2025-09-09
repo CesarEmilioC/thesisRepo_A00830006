@@ -12,44 +12,29 @@ from openPoseRequirements.tf_pose.networks import get_graph_path, model_wh
 # Absolute path to project root
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 # Results folder
-results_dir = os.path.join(ROOT_DIR, 'Samples/coordinateSamples')
+results_dir = os.path.join(ROOT_DIR, 'Coordinates')
 
 
-def run_pose_estimation(args):
+def analyze_video(video_path, args, show_video=False):
     """
-    Runs pose estimation on a given video input, extracts coordinates of keypoints,
-    and saves them into a JSON file with coordinates and metadata.
+    Analyze a single video file, run pose estimation, and save coordinates JSON.
 
     Parameters
     ----------
+    video_path : str
+        Path to the video file.
     args : argparse.Namespace
-        Arguments including:
-        - args.model: Pose estimation model type.
-        - args.resize: Image resize option for the model.
-        - args.resize_out_ratio: Resize ratio for upsampling.
-        - args.camera: Path to video file or camera index.
-
-    Output
-    ------
-    JSON file containing:
-    - Metadata (video info, processing info, pose info).
-    - Extracted coordinates with timestamps.
+        Contains model, resize, resize_out_ratio, etc.
+    show_video : bool
+        If True, displays the video with keypoints (default=False).
     """
 
-    logger = logging.getLogger('TfPoseEstimator-WebCam')
-    logger.setLevel(logging.DEBUG)
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s')
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-
+    logger = logging.getLogger('TfPoseEstimator')
     fps_time = 0
 
-    # Initialize coordinates and metadata container
     coords = {
         "metadata": {
-            "video_path": args.camera,
+            "video_path": video_path,
             "video_name": None,       # filled later
             "duration": None,         # filled later
             "fps": None,              # filled later
@@ -78,8 +63,8 @@ def run_pose_estimation(args):
         e = TfPoseEstimator(get_graph_path(args.model), target_size=(w, h))
     else:
         e = TfPoseEstimator(get_graph_path(args.model), target_size=(432, 368))
-    logger.debug('cam read+')
-    cam = cv2.VideoCapture(args.camera)
+
+    cam = cv2.VideoCapture(video_path)
     ret_val, image = cam.read()
 
     # Extract video metadata
@@ -95,9 +80,12 @@ def run_pose_estimation(args):
     coords["metadata"]["duration"] = duration
     coords["metadata"]["total_frames"] = total_frames
 
-    logger.info('cam image=%dx%d' % (frame_width, frame_height))
+    logger.info('Analyzing %s (%dx%d, %.2f fps, %.2f s)',
+                video_path, frame_width, frame_height, fps, duration or 0)
 
-    cv2.namedWindow('tf-pose-estimation result', cv2.WINDOW_NORMAL)
+    if show_video:
+        cv2.namedWindow('tf-pose-estimation result', cv2.WINDOW_NORMAL)
+
     while True:
         ret_val, image = cam.read()
         if not ret_val:
@@ -106,8 +94,8 @@ def run_pose_estimation(args):
         # Current video time in seconds
         video_time = cam.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
 
-        logger.debug('image process+')
-        humans = e.inference(image, resize_to_default=(w > 0 and h > 0), upsample_size=args.resize_out_ratio)
+        humans = e.inference(image, resize_to_default=(w > 0 and h > 0),
+                             upsample_size=args.resize_out_ratio)
 
         if humans:  # At least one person detected
             selected_human = None
@@ -131,10 +119,11 @@ def run_pose_estimation(args):
                     right_wrist_coords = (int(right_wrist.x * image.shape[1]), int(right_wrist.y * image.shape[0]))
                     right_elbow_coords = (int(right_elbow.x * image.shape[1]), int(right_elbow.y * image.shape[0]))
 
-                    # Draw keypoints
-                    cv2.circle(image, pelvis_coords, 8, (0, 255, 0), -1)
-                    cv2.circle(image, right_wrist_coords, 8, (0, 0, 255), -1)
-                    cv2.circle(image, right_elbow_coords, 8, (255, 0, 0), -1)
+                    if show_video:
+                        # Draw keypoints
+                        cv2.circle(image, pelvis_coords, 8, (0, 255, 0), -1)
+                        cv2.circle(image, right_wrist_coords, 8, (0, 0, 255), -1)
+                        cv2.circle(image, right_elbow_coords, 8, (255, 0, 0), -1)
 
                     # Invert Y
                     height = image.shape[0]
@@ -156,25 +145,47 @@ def run_pose_estimation(args):
                     coords["timestamps"].append(video_time)
                     coords["total_coordinates"] += 1
 
-        # Show FPS
-        cv2.putText(image, "FPS: %f" % (1.0 / (time.time() - fps_time)),
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        if show_video:
+            # Show FPS
+            cv2.putText(image, "FPS: %f" % (1.0 / (time.time() - fps_time)),
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-        cv2.imshow('tf-pose-estimation result', image)
-        fps_time = time.time()
+            cv2.imshow('tf-pose-estimation result', image)
+            fps_time = time.time()
 
-        if cv2.waitKey(1) == 27:
-            break
+            if cv2.waitKey(1) == 27:
+                break
 
-    cv2.destroyAllWindows()
-    
+    cam.release()
+    if show_video:
+        cv2.destroyAllWindows()
+
     # Save data to JSON
-    path = args.camera
-    start = path.rfind("\\") + 1
-    end = path.rfind(".mp4")
-    video_name = path[start:end]
+    start = video_path.rfind(os.sep) + 1
+    end = video_path.rfind(".mp4")
+    video_name = video_path[start:end]
     coords["metadata"]["video_name"] = video_name
 
     coordinates_dir = os.path.join(results_dir, f'{video_name}.json')
     with open(coordinates_dir, "w") as file:
         json.dump(coords, file, indent=4)
+
+    logger.info("Saved coordinates to %s", coordinates_dir)
+
+
+def run_pose_estimation(args):
+    """
+    Runs pose estimation either on a single video (--camera) or all videos in a directory (--directory).
+    """
+
+    if args.camera != "0":
+        analyze_video(args.camera, args, show_video=False)  # change to True to see video
+    elif args.directory != "0":
+        print("This is the directory", args.directory)
+        for file in os.listdir(args.directory):
+            print(file)
+            if file.lower().endswith(".mp4"):
+                video_path = os.path.join(args.directory, file)
+                analyze_video(video_path, args, show_video=False)  # change to True if you want visualization
+    else:
+        print("Please provide either --camera <video_path> or --directory <folder_path>.")
