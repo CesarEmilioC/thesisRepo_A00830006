@@ -57,7 +57,7 @@ THESISREPO_A00830006/
 │   │   ├── module_train.py  
 │   │   └── module_test.py  
 │   ├── openPoseRequirements/  
-│   └── main.py  
+│   └── main.py
 │  
 ├── environment.yml  
 ├── requirements.txt  
@@ -79,6 +79,8 @@ THESISREPO_A00830006/
 
 The **Videos** folder is hosted independently on OneDrive (not tracked in Git).  
 It contains the raw recordings, pre-cut clips organized by player and part, and the JSON timestamp files used to generate clips.
+
+The videos folder can be found in the following link: https://tecmx-my.sharepoint.com/:f:/g/personal/a00830006_tec_mx/EuvOsh32lh5El-Aitld6c9UBhsb97xw9q9HbERRJAxOjwg?e=3RdkXB
 
 ### Folder Structure (updated with `part1`, `part2`, ... inside `Clips/`)
 
@@ -174,16 +176,29 @@ The `main.py` script uses a command-line interface via `argparse` to allow modul
 ### Example Commands
 
 **To extract pose data from a test video using OpenPose:**  
+
+```bash
 cd Source  
-python main.py pose --camera ..\Samples\clipSamples\<video_filename>.mp4  
+python main.py pose --camera ..\Samples\clipSamples\<video_fileName>.mp4  
+```
+
+**To extract pose data from a test folder using OpenPose:**  
+
+```bash
+cd Source  
+python main.py pose --directory <videos_directoryName>\Videos\Clips\<player_playerNumber>.mp4  
+```
 
 This will process the input video and save the extracted joint coordinates (shoulder, elbow, wrist) to a JSON file inside the `Samples/coordinateSamples` directory.
 
 ---
 
 **To visualize a coordinate file (previously extracted):**  
+
+```bash
 cd Source  
 python main.py plot --file ..\Samples\coordinateSamples\<coordinate_filename>.json  
+```
 
 This generates a visual representation of the movement trajectory from the coordinate file. It is useful for comparing technical patterns and analyzing shot quality.
 
