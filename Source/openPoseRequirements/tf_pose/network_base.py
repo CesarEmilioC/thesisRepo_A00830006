@@ -5,7 +5,7 @@ import sys
 import abc
 import numpy as np
 import tensorflow as tf
-import tensorflow.contrib.slim as slim
+import tf_slim as slim
 
 from tf_pose.common import to_str
 from tf_pose import common
@@ -13,11 +13,11 @@ from tf_pose import common
 DEFAULT_PADDING = 'SAME'
 
 
-_init_xavier = tf.contrib.layers.xavier_initializer()
-_init_norm = tf.truncated_normal_initializer(stddev=0.01)
+_init_xavier = slim.initializers.xavier_initializer()
+_init_norm = tf.keras.initializers.TruncatedNormal(stddev=0.01)
 _init_zero = slim.init_ops.zeros_initializer()
-_l2_regularizer_00004 = tf.contrib.layers.l2_regularizer(0.00004)
-_l2_regularizer_convb = tf.contrib.layers.l2_regularizer(common.regularizer_conv)
+_l2_regularizer_00004 = tf.keras.regularizers.L2(0.00004)
+_l2_regularizer_convb = tf.keras.regularizers.L2(common.regularizer_conv)
 
 
 def layer(op):
@@ -142,7 +142,7 @@ class BaseNetwork(object):
 
     def make_var(self, name, shape, trainable=True):
         '''Creates a new TensorFlow variable.'''
-        return tf.get_variable(name, shape, trainable=self.trainable & trainable, initializer=tf.contrib.layers.xavier_initializer())
+        return tf.get_variable(name, shape, trainable=self.trainable & trainable, initializer=slim.initializers.xavier_initializer())
 
     def validate_padding(self, padding):
         '''Verifies that the padding is one of the supported ones.'''
@@ -378,7 +378,7 @@ class BaseNetwork(object):
         ref : https://github.com/kobiso/SENet-tensorflow-slim/blob/master/nets/attention_module.py
         """
 
-        kernel_initializer = tf.contrib.layers.variance_scaling_initializer()
+        kernel_initializer = slim.initializers.variance_scaling_initializer()
         bias_initializer = tf.constant_initializer(value=0.0)
 
         with tf.variable_scope(name):

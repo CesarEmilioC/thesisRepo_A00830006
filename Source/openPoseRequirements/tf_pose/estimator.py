@@ -303,73 +303,127 @@ class TfPoseEstimator:
     # TODO : multi-scale
 
     def __init__(self, graph_path, target_size=(320, 240), tf_config=None):
+        """
+        Inicializa el estimador de pose cargando el grafo preentrenado de OpenPose.
+
+        Parámetros:
+        -----------
+        graph_path : str
+            Ruta al archivo .pb (modelo congelado de OpenPose).
+        target_size : tuple(int, int)
+            Tamaño de las imágenes de entrada (ancho, alto).
+        tf_config : tf.compat.v1.ConfigProto
+            Configuración opcional para la sesión de TensorFlow.
+        """
+
+        logger = logging.getLogger(__name__)
         self.target_size = target_size
 
-        # load graph
-        logger.info('loading graph from %s(default size=%dx%d)' % (graph_path, target_size[0], target_size[1]))
-        with tf.gfile.GFile(graph_path, 'rb') as f:
-            graph_def = tf.GraphDef()
-            graph_def.ParseFromString(f.read())
+        # ===============================================================
+        # 1. Desactivar ejecución eager y preparar compatibilidad TF1
+        # ===============================================================
+        tf.compat.v1.disable_eager_execution()
 
-        self.graph = tf.get_default_graph()
-        tf.import_graph_def(graph_def, name='TfPoseEstimator')
-        self.persistent_sess = tf.Session(graph=self.graph, config=tf_config)
-
-        # for op in self.graph.get_operations():
-        #     print(op.name)
-        # for ts in [n.name for n in tf.get_default_graph().as_graph_def().node]:
-        #     print(ts)
-
-        self.tensor_image = self.graph.get_tensor_by_name('TfPoseEstimator/image:0')
-        self.tensor_output = self.graph.get_tensor_by_name('TfPoseEstimator/Openpose/concat_stage7:0')
-        self.tensor_heatMat = self.tensor_output[:, :, :, :19]
-        self.tensor_pafMat = self.tensor_output[:, :, :, 19:]
-        self.upsample_size = tf.placeholder(dtype=tf.int32, shape=(2,), name='upsample_size')
-        self.tensor_heatMat_up = tf.image.resize_area(self.tensor_output[:, :, :, :19], self.upsample_size,
-                                                      align_corners=False, name='upsample_heatmat')
-        self.tensor_pafMat_up = tf.image.resize_area(self.tensor_output[:, :, :, 19:], self.upsample_size,
-                                                     align_corners=False, name='upsample_pafmat')
-        smoother = Smoother({'data': self.tensor_heatMat_up}, 25, 3.0)
-        gaussian_heatMat = smoother.get_output()
-
-        max_pooled_in_tensor = tf.nn.pool(gaussian_heatMat, window_shape=(3, 3), pooling_type='MAX', padding='SAME')
-        self.tensor_peaks = tf.where(tf.equal(gaussian_heatMat, max_pooled_in_tensor), gaussian_heatMat,
-                                     tf.zeros_like(gaussian_heatMat))
-
-        self.heatMat = self.pafMat = None
-
-        # warm-up
-        self.persistent_sess.run(tf.variables_initializer(
-            [v for v in tf.global_variables() if
-             v.name.split(':')[0] in [x.decode('utf-8') for x in
-                                      self.persistent_sess.run(tf.report_uninitialized_variables())]
-             ])
-        )
-        self.persistent_sess.run(
-            [self.tensor_peaks, self.tensor_heatMat_up, self.tensor_pafMat_up],
-            feed_dict={
-                self.tensor_image: [np.ndarray(shape=(target_size[1], target_size[0], 3), dtype=np.float32)],
-                self.upsample_size: [target_size[1], target_size[0]]
-            }
-        )
-        self.persistent_sess.run(
-            [self.tensor_peaks, self.tensor_heatMat_up, self.tensor_pafMat_up],
-            feed_dict={
-                self.tensor_image: [np.ndarray(shape=(target_size[1], target_size[0], 3), dtype=np.float32)],
-                self.upsample_size: [target_size[1] // 2, target_size[0] // 2]
-            }
-        )
-        self.persistent_sess.run(
-            [self.tensor_peaks, self.tensor_heatMat_up, self.tensor_pafMat_up],
-            feed_dict={
-                self.tensor_image: [np.ndarray(shape=(target_size[1], target_size[0], 3), dtype=np.float32)],
-                self.upsample_size: [target_size[1] // 4, target_size[0] // 4]
-            }
+        logger.info(
+            f'Loading graph from {graph_path} (default size={target_size[0]}x{target_size[1]})'
         )
 
-        # logs
-        if self.tensor_image.dtype == tf.quint8:
-            logger.info('quantization mode enabled.')
+        # ===============================================================
+        # 2. Crear un grafo propio para este modelo (aislado del global)
+        # ===============================================================
+        self.graph = tf.Graph()
+        with self.graph.as_default():
+            # Cargar el modelo congelado (.pb)
+            graph_def = tf.compat.v1.GraphDef()
+            with tf.io.gfile.GFile(graph_path, 'rb') as f:
+                graph_def.ParseFromString(f.read())
+
+            # Importar el grafo dentro del contexto actual
+            tf.import_graph_def(graph_def, name='')
+
+            # Crear la sesión vinculada a este grafo
+            self.persistent_sess = tf.compat.v1.Session(graph=self.graph, config=tf_config)
+
+            # ===========================================================
+            # 3. Recuperar tensores principales del modelo importado
+            # ===========================================================
+            # Imagen de entrada
+            self.tensor_image = self.graph.get_tensor_by_name('image:0')
+
+            # Salida final del modelo (concatenación de features)
+            self.tensor_output = self.graph.get_tensor_by_name('Openpose/concat_stage7:0')
+
+            # Separar heatmaps (19 canales) y PAFs (38 canales) dentro del grafo
+            self.tensor_heatMat = self.tensor_output[:, :, :, :19]
+            self.tensor_pafMat = self.tensor_output[:, :, :, 19:]
+
+            # ===========================================================
+            # 4. Preparar operaciones auxiliares de upsampling y suavizado
+            # ===========================================================
+            self.upsample_size = tf.compat.v1.placeholder(dtype=tf.int32, shape=(2,), name='upsample_size')
+
+            self.tensor_heatMat_up = tf.image.resize(
+                self.tensor_heatMat, self.upsample_size,
+                method=tf.image.ResizeMethod.AREA,
+                name='upsample_heatmat'
+            )
+            self.tensor_pafMat_up = tf.image.resize(
+                self.tensor_pafMat, self.upsample_size,
+                method=tf.image.ResizeMethod.AREA,
+                name='upsample_pafmat'
+            )
+
+            # Suavizado gaussiano
+            smoother = Smoother({'data': self.tensor_heatMat_up}, 25, 3.0)
+            gaussian_heatMat = smoother.get_output()
+
+            # Detección de picos máximos en los heatmaps
+            max_pooled_in_tensor = tf.nn.pool(
+                gaussian_heatMat, window_shape=(3, 3),
+                pooling_type='MAX', padding='SAME'
+            )
+            self.tensor_peaks = tf.where(
+                tf.equal(gaussian_heatMat, max_pooled_in_tensor),
+                gaussian_heatMat,
+                tf.zeros_like(gaussian_heatMat)
+            )
+
+            # ===========================================================
+            # 5. Inicialización de variables y warm-up
+            # ===========================================================
+            self.heatMat = self.pafMat = None
+
+            # Inicializar variables no inicializadas
+            uninitialized = self.persistent_sess.run(tf.compat.v1.report_uninitialized_variables())
+            if uninitialized:
+                vars_to_init = [
+                    v for v in tf.compat.v1.global_variables()
+                    if v.name.split(':')[0] in [x.decode('utf-8') for x in uninitialized]
+                ]
+                self.persistent_sess.run(tf.compat.v1.variables_initializer(vars_to_init))
+
+            # Warm-up: correr tres inferencias vacías para evitar retardos posteriores
+            dummy_input = np.ndarray(
+                shape=(target_size[1], target_size[0], 3),
+                dtype=np.float32
+            )
+
+            for scale in [1, 0.5, 0.25]:
+                upsample_dims = [int(target_size[1] * scale), int(target_size[0] * scale)]
+                self.persistent_sess.run(
+                    [self.tensor_peaks, self.tensor_heatMat_up, self.tensor_pafMat_up],
+                    feed_dict={
+                        self.tensor_image: [dummy_input],
+                        self.upsample_size: upsample_dims
+                    }
+                )
+
+            # ===========================================================
+            # 6. Log de modo cuantizado
+            # ===========================================================
+            if self.tensor_image.dtype == tf.quint8:
+                logger.info('Quantization mode enabled.')
+
 
     def __del__(self):
         # self.persistent_sess.close()

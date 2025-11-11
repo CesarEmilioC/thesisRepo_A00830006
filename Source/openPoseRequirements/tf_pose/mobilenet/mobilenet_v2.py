@@ -29,8 +29,8 @@ import tensorflow as tf
 
 from tf_pose.mobilenet import conv_blocks as ops
 from tf_pose.mobilenet import mobilenet as lib
+import tf_slim as slim
 
-slim = tf.contrib.slim
 op = lib.op
 
 expand_input = ops.expand_input_by_factor
