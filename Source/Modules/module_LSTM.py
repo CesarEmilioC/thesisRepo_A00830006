@@ -4,46 +4,53 @@ Module: module_LSTM.py
 Author: Cesar Emilio Castaño Marin
 Project: Thesis - Smash Vision / LSTM for Paddle Tennis Analysis
 -------------------------------------------------------------
+Descripción general:
+--------------------
+Este módulo implementa todas las funciones necesarias para:
 
-Descripción:
-------------
-Este módulo implementa un modelo LSTM (Long Short-Term Memory)
-para predecir la calificación (de 1 a 10) de un movimiento de
-"bandeja" en pádel a partir de las coordenadas extraídas por
-pose estimation.
+1. Cargar y procesar coordenadas JSON (pose estimation)
+2. Entrenar un modelo LSTM mejorado (Bidirectional + BatchNorm)
+3. Evaluar el modelo con métricas y visualizaciones
+4. Realizar predicciones sobre clips individuales
+5. Analizar la cantidad de clips por calificación (countGrades)
+6. Visualizar la matriz de confusión y un gráfico de barras por clase
 
-Cada clip de movimiento se almacena como un archivo JSON con:
-    - Coordenadas de Pelvis, Codo Derecho y Mano Derecha
-    - Calificación (grade)
-    - Metadatos del video
-
-El modelo analiza las secuencias de coordenadas a lo largo del
-tiempo y aprende patrones que corresponden a diferentes niveles
-de ejecución técnica.
-
--------------------------------------------------------------
-Estructura general del módulo:
-1. Carga de datos JSON
-2. Normalización y preprocesamiento
-3. Definición y entrenamiento del modelo LSTM
-4. Evaluación y visualización de métricas
-5. Predicción de nuevas secuencias
+El objetivo es construir un pipeline robusto para tu tesis.
 -------------------------------------------------------------
 """
+
+# ============================================================
+# IMPORTACIONES
+# ============================================================
 
 import os
 import json
 import numpy as np
 from tqdm import tqdm
+from collections import Counter
+
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    accuracy_score
+)
+
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 import tensorflow as tf
+tf.autograph.set_verbosity(0)
+tf.get_logger().setLevel('ERROR')
+
 from keras.models import Sequential, load_model
-from keras.layers import LSTM, Dense, Dropout
+from keras.layers import (
+    LSTM, Dense, Dropout,
+    BatchNormalization, Bidirectional
+)
 from keras.utils import pad_sequences
 from keras.callbacks import EarlyStopping
+
 
 # ============================================================
 # 1. CARGA DE ARCHIVOS JSON
@@ -51,52 +58,45 @@ from keras.callbacks import EarlyStopping
 
 def load_all_jsons(base_dir):
     """
-    Recorre recursivamente la carpeta base y carga todos los
-    archivos JSON con coordenadas.
+    Recorre recursivamente la carpeta base y carga todos los JSON
+    con coordenadas de Pelvis, Codo Derecha y Mano Derecha.
 
-    Parámetros
-    ----------
-    base_dir : str
-        Ruta a la carpeta raíz que contiene subcarpetas con
-        archivos JSON de coordenadas.
+    Cada JSON debe tener metadata.grade indicando la calificación.
 
-    Retorna
-    -------
-    sequences : list[np.ndarray]
-        Lista con las secuencias de coordenadas concatenadas
-        (Pelvis, CodoDerechoReferencia, ManoDerechaReferencia).
-        Cada elemento tiene forma (n_frames, 6).
-    labels : list[int]
-        Lista con las calificaciones (grades) asociadas.
+    Retorna:
+    --------
+    sequences : list(np.ndarray) con forma (frames, 6)
+    labels    : list(int) calificación del clip
     """
+
     sequences = []
     labels = []
 
     for root, _, files in os.walk(base_dir):
         for file in files:
             if file.endswith(".json"):
-                file_path = os.path.join(root, file)
+                path = os.path.join(root, file)
 
-                # Cargar contenido del archivo JSON
-                with open(file_path, "r") as f:
+                with open(path, "r") as f:
                     data = json.load(f)
 
                 meta = data.get("metadata", {})
-                grade = int(meta.get("grade", 0))  # Calificación 1–10
+                grade = int(meta.get("grade", 0))
 
-                # Extraer las coordenadas relevantes
                 pelvis = np.array(data.get("Pelvis", []))
-                elbow = np.array(data.get("Codo Derecha Referencia", []))
-                hand = np.array(data.get("Mano Derecha Referencia", []))
+                elbow  = np.array(data.get("Codo Derecha Referencia", []))
+                hand   = np.array(data.get("Mano Derecha Referencia", []))
 
-                # Asegurar misma longitud para todas las secuencias
-                min_len = min(len(pelvis), len(elbow), len(hand))
-                pelvis, elbow, hand = pelvis[:min_len], elbow[:min_len], hand[:min_len]
+                # cortar a mínimo común
+                L = min(len(pelvis), len(elbow), len(hand))
+                if L == 0:
+                    continue
 
-                # Concatenar (x, y) de cada punto → shape (frames, 6)
-                sequence = np.concatenate([pelvis, elbow, hand], axis=1)
+                seq = np.concatenate([
+                    pelvis[:L], elbow[:L], hand[:L]
+                ], axis=1)  # (frames, 6)
 
-                sequences.append(sequence)
+                sequences.append(seq)
                 labels.append(grade)
 
     print(f"[INFO] Se cargaron {len(sequences)} clips desde {base_dir}")
@@ -104,242 +104,264 @@ def load_all_jsons(base_dir):
 
 
 # ============================================================
-# 2. PREPROCESAMIENTO DE DATOS
+# 2. CONTAR GRADES (Nuevo subcomando)
 # ============================================================
 
-def prepare_data(sequences, labels, max_len=100):
+def count_grades(args):
     """
-    Normaliza, rellena y divide los datos en conjuntos de
-    entrenamiento y prueba.
-
-    Pasos:
-    1. Normaliza cada clip (z-score)
-    2. Rellena las secuencias hasta `max_len`
-    3. Divide en train/test (80/20)
-
-    Parámetros
-    ----------
-    sequences : list[np.ndarray]
-        Lista de secuencias (n_frames, 6)
-    labels : list[int]
-        Lista con calificaciones (1–10)
-    max_len : int
-        Longitud máxima de secuencia (rellena con ceros)
-
-    Retorna
-    -------
-    X_train, X_test : np.ndarray
-        Tensores de entrada para LSTM (n_samples, max_len, 6)
-    y_train, y_test : np.ndarray
-        Etiquetas de entrenamiento y prueba
+    Cuenta cuántos clips existen por calificación (grade).
+    Llamado desde main:
+        python main.py countGrades --directory Coordinates
     """
-    normalized = []
 
-    # Normalizar coordenadas dentro de cada clip
-    for seq in sequences:
-        seq = (seq - np.mean(seq, axis=0)) / (np.std(seq, axis=0) + 1e-8)
-        normalized.append(seq)
+    _, labels = load_all_jsons(args.directory)
 
-    # Igualar longitudes (relleno o truncamiento)
-    X = pad_sequences(normalized, maxlen=max_len, dtype='float32',
-                      padding='post', truncating='post')
-    y = np.array(labels, dtype=np.int32)
+    if not labels:
+        print("[ERROR] No hay JSONs con calificaciones.")
+        return
 
-    # Convertir etiquetas 1–10 a 0–9 (para softmax)
-    y -= 1
+    counter = Counter(labels)
 
-    # Dividir en train/test
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+    print("\n============================")
+    print(" DISTRIBUCIÓN DE CALIFICACIONES")
+    print("============================\n")
+
+    for g in sorted(counter.keys()):
+        print(f"Grade {g}: {counter[g]} clips")
+
+    print("\n============================\n")
+
+
+# ============================================================
+# 3. PREPROCESAMIENTO
+# ============================================================
+
+def prepare_data(sequences, labels, max_len=120):
+    """
+    Normaliza secuencias (z-score), aplica padding / truncamiento
+    y crea el split train-test.
+
+    Retorna:
+    --------
+    X_train, X_test : arrays (N, max_len, 6)
+    y_train, y_test : arrays (N,)
+    """
+
+    normalized = [(seq - np.mean(seq, axis=0)) /
+                  (np.std(seq, axis=0) + 1e-8)
+                  for seq in sequences]
+
+    X = pad_sequences(
+        normalized,
+        maxlen=max_len,
+        dtype='float32',
+        padding='post',
+        truncating='post'
     )
 
-    print(f"[INFO] Datos preparados: {X_train.shape[0]} train / {X_test.shape[0]} test")
+    y = np.array(labels) - 1  # convertir 1–10 → 0–9
+
+    counts = Counter(y)
+
+    # algunas clases tienen <2 muestras → no se puede estratificar
+    stratify_val = y if min(counts.values()) >= 2 else None
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2,
+        random_state=42,
+        stratify=stratify_val
+    )
+
+    print(f"[INFO] Train: {len(X_train)} / Test: {len(X_test)}")
     return X_train, X_test, y_train, y_test
 
 
 # ============================================================
-# 3. DEFINICIÓN DEL MODELO LSTM
+# 4. MODELO LSTM MEJORADO
 # ============================================================
 
 def create_lstm_model(input_shape, num_classes=10):
     """
-    Define la arquitectura del modelo LSTM.
-
-    Arquitectura:
-        LSTM(128, return_sequences=True)
-        Dropout(0.3)
-        LSTM(64)
-        Dropout(0.3)
-        Dense(64, relu)
-        Dense(num_classes, softmax)
-
-    Parámetros
-    ----------
-    input_shape : tuple
-        (max_len, num_features)
-    num_classes : int
-        Número de clases de salida (10 calificaciones)
-
-    Retorna
-    -------
-    model : keras.Model
-        Modelo LSTM compilado y listo para entrenamiento.
+    Modelo LSTM robusto para capturar dinámica temporal de movimiento.
+    Incluye:
+    - BatchNormalization
+    - Bidirectional LSTM profundo
+    - Dropout
     """
+
     model = Sequential([
-        LSTM(128, input_shape=input_shape, return_sequences=True),
-        Dropout(0.3),
-        LSTM(64),
-        Dropout(0.3),
+        BatchNormalization(),
+
+        Bidirectional(LSTM(128, return_sequences=True)),
+        Dropout(0.30),
+
+        Bidirectional(LSTM(64)),
+        Dropout(0.25),
+
         Dense(64, activation='relu'),
+        BatchNormalization(),
+
         Dense(num_classes, activation='softmax')
     ])
 
-    # Compilación con optimizador y métrica
-    model.compile(optimizer='adam',
-                  loss='sparse_categorical_crossentropy',
-                  metrics=['accuracy'])
+    model.compile(
+        optimizer="adam",
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"]
+    )
+
     return model
 
 
 # ============================================================
-# 4. ENTRENAMIENTO DEL MODELO
+# 5. ENTRENAMIENTO DEL MODELO
 # ============================================================
 
 def train_model(args):
     """
-    Entrena un modelo LSTM a partir de todos los JSON de coordenadas.
-
-    Parámetros
-    ----------
-    args.directory : str
-        Ruta a la carpeta "Coordinates" con los JSONs.
-    args.model_path : str
-        Ruta donde se guardará el modelo (.h5).
+    Entrena el modelo LSTM sobre la carpeta Coordinates/
     """
-    data_dir = args.directory
-    model_path = args.model_path
 
-    # --- Cargar y preparar datos ---
-    sequences, labels = load_all_jsons(data_dir)
-    X_train, X_test, y_train, y_test = prepare_data(sequences, labels)
-    input_shape = (X_train.shape[1], X_train.shape[2])
+    seqs, labels = load_all_jsons(args.directory)
+    X_train, X_test, y_train, y_test = prepare_data(seqs, labels)
 
-    # --- Crear modelo ---
-    model = create_lstm_model(input_shape)
-    model.summary()
+    model = create_lstm_model(
+        input_shape=(X_train.shape[1], X_train.shape[2])
+    )
 
-    # --- Callbacks para detener entrenamiento temprano ---
-    early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+    early = EarlyStopping(
+        monitor='val_loss',
+        patience=12,
+        restore_best_weights=True
+    )
 
-    # --- Entrenar modelo ---
     history = model.fit(
         X_train, y_train,
-        epochs=100,
+        epochs=80,
         batch_size=16,
         validation_split=0.2,
-        callbacks=[early_stop],
+        callbacks=[early],
         verbose=1
     )
 
-    # --- Guardar modelo entrenado ---
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    model.save(model_path)
-    print(f"[INFO] Modelo guardado en {model_path}")
+    os.makedirs(os.path.dirname(args.model_path), exist_ok=True)
+    model.save(args.model_path)
 
-    # --- Evaluar desempeño ---
+    print(f"[INFO] Modelo guardado en {args.model_path}")
+
     evaluate_model(model, X_test, y_test)
 
 
 # ============================================================
-# 5. EVALUACIÓN DEL MODELO
+# 6. VISUALIZACIONES Y MÉTRICAS
 # ============================================================
 
-def evaluate_model(model, X_test, y_test):
+def plot_class_distribution(y_true, y_pred):
     """
-    Evalúa el modelo LSTM y muestra las métricas de desempeño.
-
-    Métricas mostradas:
-        - Accuracy global
-        - Reporte de clasificación (precision, recall, F1)
-        - Matriz de confusión visual
-
-    Parámetros
-    ----------
-    model : keras.Model
-        Modelo entrenado.
-    X_test : np.ndarray
-        Datos de prueba.
-    y_test : np.ndarray
-        Etiquetas reales de prueba.
+    Dibuja un gráfico de barras comparando:
+    - cantidad real por clase
+    - cantidad predicha por clase
     """
-    # --- Predicciones ---
-    y_pred = np.argmax(model.predict(X_test), axis=1)
 
-    # --- Accuracy global ---
-    acc = accuracy_score(y_test, y_pred)
-    print(f"\n✅ Accuracy: {acc:.4f}")
+    true_counts = Counter(y_true)
+    pred_counts = Counter(y_pred)
 
-    # --- Reporte de clasificación detallado ---
-    print("\n📊 Reporte de Clasificación:")
-    print(classification_report(y_test, y_pred, digits=3))
+    labels = sorted(set(list(true_counts.keys()) + list(pred_counts.keys())))
 
-    # --- Matriz de confusión ---
-    cm = confusion_matrix(y_test, y_pred)
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=range(1, 11), yticklabels=range(1, 11))
-    plt.title("Matriz de Confusión (Grades 1–10)")
-    plt.xlabel("Predicho")
-    plt.ylabel("Real")
+    real = [true_counts.get(l, 0) for l in labels]
+    pred = [pred_counts.get(l, 0) for l in labels]
+
+    plt.figure(figsize=(10, 6))
+    x = np.arange(len(labels))
+
+    plt.bar(x - 0.2, real, width=0.4, label="Real")
+    plt.bar(x + 0.2, pred, width=0.4, label="Predicho")
+
+    plt.xticks(x, [l + 1 for l in labels])
+    plt.title("Distribución por clase (Real vs Predicho)")
+    plt.xlabel("Clase (Grade)")
+    plt.ylabel("Cantidad de clips")
+    plt.legend()
+    plt.tight_layout()
     plt.show()
 
 
+def evaluate_model(model, X_test, y_test):
+    """
+    Evalúa el modelo y genera:
+    - Accuracy
+    - Classification report (una sola vez)
+    - Matriz de confusión
+    - Gráfico de barras (Real vs Predicho)
+    """
+
+    # predicciones (silenciado)
+    y_pred = np.argmax(model.predict(X_test, verbose=0), axis=1)
+
+    # accuracy
+    acc = accuracy_score(y_test, y_pred)
+    print(f"\n🎯 Accuracy: {acc:.4f}\n")
+
+    # clasificación sin duplicados
+    valid_labels = sorted(set(y_test))
+
+    print("📊 Reporte de Clasificación:\n")
+    print(classification_report(
+        y_test,
+        y_pred,
+        digits=3,
+        zero_division=0,
+        labels=valid_labels
+    ))
+
+    # matriz de confusión
+    cm = confusion_matrix(y_test, y_pred, labels=valid_labels)
+
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(
+        cm,
+        annot=True,
+        cmap="Blues",
+        xticklabels=[v + 1 for v in valid_labels],
+        yticklabels=[v + 1 for v in valid_labels]
+    )
+    plt.xlabel("Predicción")
+    plt.ylabel("Real")
+    plt.title("Matriz de Confusión (Grades)")
+    plt.show()
+
+    # gráfico de barras por clase
+    plot_class_distribution(y_test, y_pred)
+
+
 # ============================================================
-# 6. PREDICCIÓN DE NUEVOS CLIPS
+# 7. PREDICCIÓN DE NUEVOS CLIPS
 # ============================================================
 
 def predict_clip(args):
     """
-    Usa un modelo entrenado para estimar la calificación (1–10)
-    de un nuevo clip JSON.
-
-    Parámetros
-    ----------
-    args.file : str
-        Ruta al archivo JSON del clip.
-    args.model_path : str
-        Ruta al modelo LSTM (.h5) entrenado.
-
-    Retorna
-    -------
-    prediction : int
-        Calificación estimada (1–10)
+    Predice la calificación de un clip JSON individual.
     """
-    model_path = args.model_path
-    json_file = args.file
 
-    # --- Cargar modelo ---
-    model = load_model(model_path)
-    print(f"[INFO] Modelo cargado desde {model_path}")
+    model = load_model(args.model_path)
+    print(f"[INFO] Modelo cargado desde {args.model_path}")
 
-    # --- Cargar y preparar clip ---
-    with open(json_file, "r") as f:
+    with open(args.file, "r") as f:
         data = json.load(f)
 
     pelvis = np.array(data.get("Pelvis", []))
-    elbow = np.array(data.get("Codo Derecha Referencia", []))
-    hand = np.array(data.get("Mano Derecha Referencia", []))
+    elbow  = np.array(data.get("Codo Derecha Referencia", []))
+    hand   = np.array(data.get("Mano Derecha Referencia", []))
 
-    # Alinear longitudes
-    min_len = min(len(pelvis), len(elbow), len(hand))
-    sequence = np.concatenate([pelvis[:min_len], elbow[:min_len], hand[:min_len]], axis=1)
+    L = min(len(pelvis), len(elbow), len(hand))
+    sequence = np.concatenate(
+        [pelvis[:L], elbow[:L], hand[:L]], axis=1
+    )
 
-    # Normalización
     sequence = (sequence - np.mean(sequence, axis=0)) / (np.std(sequence, axis=0) + 1e-8)
-    sequence = np.expand_dims(sequence, axis=0)  # (1, n_frames, 6)
+    sequence = np.expand_dims(sequence, axis=0)
 
-    # --- Predicción ---
-    prediction = np.argmax(model.predict(sequence), axis=1)[0] + 1  # volver a escala 1–10
-    print(f"\n🎯 Calificación estimada: {prediction}/10\n")
+    pred = np.argmax(model.predict(sequence, verbose=0), axis=1)[0] + 1
 
-    return prediction
+    print(f"\n🎯 Calificación estimada: {pred}/10\n")
+    return pred
