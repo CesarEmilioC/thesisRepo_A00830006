@@ -21,12 +21,14 @@ def main():
     """
     Herramienta integral para análisis y evaluación de movimientos en pádel.
     -----------------------------------------------------------
-    Este programa permite realizar:
-    1. Estimación de pose con OpenPose (pose)
-    2. Visualización de coordenadas (plot)
-    3. Animación de movimientos (animate)
-    4. Entrenamiento del modelo LSTM (trainLSTM)
-    5. Predicción de calificaciones con LSTM (predictLSTM)
+    Comandos disponibles:
+    1. pose          → Estimación de pose con OpenPose
+    2. plot          → Gráficas a partir del JSON
+    3. animate       → Animación del movimiento
+    4. trainLSTM     → Entrenar modelo LSTM
+    5. predictLSTM   → Predecir calificación
+    6. countGrades   → Contar cuántos clips hay por calificación
+    7. analyzeJSON   → Analizar proporción de frames válidos en JSONs
     """
 
     parser = argparse.ArgumentParser(
@@ -42,44 +44,20 @@ def main():
         "pose",
         help="Realiza la estimación de pose desde cámara o video."
     )
-    subparser_pose.add_argument(
-        "--camera",
-        type=str,
-        default="0",
-        help=(
-            "Índice de cámara o ruta de video.\n"
-            "Ejemplo: '--camera 0' usa la cámara web, '--camera video.mp4' usa un archivo."
-        )
-    )
-    subparser_pose.add_argument(
-        "--directory",
-        type=str,
-        default="0",
-        help="Ruta a una carpeta con múltiples videos a analizar secuencialmente."
-    )
-    subparser_pose.add_argument(
-        "--resize",
-        type=str,
-        default="0x0",
-        help="Redimensionamiento de entrada (ej. '432x368'). Default: 0x0 (sin cambio)."
-    )
-    subparser_pose.add_argument(
-        "--resize-out-ratio",
-        type=float,
-        default=4.0,
-        help="Factor de redimensionamiento de los mapas de salida (heatmaps). Default: 4.0."
-    )
-    subparser_pose.add_argument(
-        "--model",
-        type=str,
-        default="mobilenet_thin",
-        help="Modelo de OpenPose a usar: 'cmu', 'mobilenet_thin', 'mobilenet_v2_large', etc."
-    )
-    subparser_pose.add_argument(
-        "--show-process",
-        action="store_true",
-        help="Muestra información del proceso de inferencia para debugging."
-    )
+    subparser_pose.add_argument("--camera", type=str, default="0",
+                                help="Índice de cámara o ruta de video.")
+    subparser_pose.add_argument("--directory", type=str, default="0",
+                                help="Carpeta con múltiples videos a analizar.")
+    subparser_pose.add_argument("--resize", type=str, default="0x0",
+                                help="Tamaño de entrada (ej. '432x368').")
+    subparser_pose.add_argument("--resize-out-ratio", type=float, default=4.0,
+                                help="Escala de los mapas de salida.")
+    subparser_pose.add_argument("--model", type=str, default="mobilenet_thin",
+                                help="Modelo OpenPose ('cmu', 'mobilenet_thin', etc.)")
+    subparser_pose.add_argument("--show-process", action="store_true",
+                                help="Muestra información del proceso.")
+    subparser_pose.add_argument("--show_video", type=bool, default=False,
+                                help="Mostrar el video durante la estimación.")
     subparser_pose.set_defaults(func=module_poseEstimation.run_pose_estimation)
 
     # ==================================================
@@ -87,43 +65,25 @@ def main():
     # ==================================================
     subparser_plot = subparsers.add_parser(
         "plot",
-        help="Genera gráficas a partir de un archivo JSON con coordenadas."
+        help="Genera gráficas a partir de un archivo JSON."
     )
-    subparser_plot.add_argument(
-        "--file",
-        type=str,
-        required=True,
-        help="Ruta al archivo JSON con coordenadas generado por la estimación de pose."
-    )
-    subparser_plot.add_argument(
-        "--type",
-        type=str,
-        choices=["original", "relative", "temporal", "3d", "all"],
-        default="all",
-        help=(
-            "Tipo de gráfica a generar:\n"
-            "  'original' → coordenadas crudas\n"
-            "  'relative' → posiciones relativas a una articulación de referencia\n"
-            "  'temporal' → evolución de las coordenadas en el tiempo\n"
-            "  '3d' → representación tridimensional\n"
-            "  'all' → genera todas las anteriores"
-        )
-    )
+    subparser_plot.add_argument("--file", type=str, required=True,
+                                help="Ruta al archivo JSON.")
+    subparser_plot.add_argument("--type", type=str,
+                                choices=["original", "relative", "temporal", "3d", "all"],
+                                default="all",
+                                help="Tipo de gráfica.")
     subparser_plot.set_defaults(func=module_grapher.plot_coordinates)
 
     # ==================================================
-    # Subparser 3: Animar movimiento
+    # Subparser 3: Animación del movimiento
     # ==================================================
     subparser_anim = subparsers.add_parser(
         "animate",
-        help="Genera una animación del movimiento (codo y mano derecha) desde un JSON."
+        help="Genera una animación desde un JSON."
     )
-    subparser_anim.add_argument(
-        "--file",
-        type=str,
-        required=True,
-        help="Ruta al archivo JSON con las coordenadas del clip a animar."
-    )
+    subparser_anim.add_argument("--file", type=str, required=True,
+                                help="Archivo JSON de coordenadas.")
     subparser_anim.set_defaults(func=module_grapher.animate_motion)
 
     # ==================================================
@@ -131,64 +91,60 @@ def main():
     # ==================================================
     subparser_train = subparsers.add_parser(
         "trainLSTM",
-        help="Entrena el modelo LSTM usando coordenadas en formato JSON."
+        help="Entrena el modelo LSTM usando archivos JSON."
     )
-    subparser_train.add_argument(
-        "--directory",
-        type=str,
-        required=True,
-        help=(
-            "Ruta a la carpeta principal 'Coordinates'.\n"
-            "La estructura debe contener subcarpetas por jugador y parte:\n"
-            "  Coordinates/\n"
-            "  ├── player1/part1/*.json\n"
-            "  ├── player2/part2/*.json ..."
-        )
-    )
-    subparser_train.add_argument(
-        "--model-path",
-        type=str,
-        default="Models/lstm_model.h5",
-        help="Ruta donde se guardará el modelo entrenado. Default: 'Models/lstm_model.h5'"
-    )
+    subparser_train.add_argument("--directory", type=str, required=True,
+                                 help="Carpeta principal 'Coordinates'.")
+    subparser_train.add_argument("--model-path", type=str,
+                                 default="Models/lstm_model.h5",
+                                 help="Ruta donde se guardará el modelo.")
     subparser_train.set_defaults(func=module_LSTM.train_model)
 
     # ==================================================
-    # Subparser 5: Predecir calificación con LSTM
+    # Subparser 5: Predecir calificación LSTM
     # ==================================================
     subparser_predict = subparsers.add_parser(
         "predictLSTM",
-        help="Predice la calificación de un clip individual usando un modelo LSTM entrenado."
+        help="Predice la calificación de un clip usando un modelo LSTM."
     )
-    subparser_predict.add_argument(
-        "--file",
-        type=str,
-        required=True,
-        help="Archivo JSON de coordenadas (formato compatible con los usados para entrenamiento)."
-    )
-    subparser_predict.add_argument(
-        "--model-path",
-        type=str,
-        default="Models/lstm_model.h5",
-        help="Ruta al modelo LSTM previamente entrenado. Default: 'Models/lstm_model.h5'"
-    )
+    subparser_predict.add_argument("--file", type=str, required=True,
+                                   help="Archivo JSON con coordenadas.")
+    subparser_predict.add_argument("--model-path", type=str,
+                                   default="Models/lstm_model.h5",
+                                   help="Ruta al modelo entrenado.")
     subparser_predict.set_defaults(func=module_LSTM.predict_clip)
-    
-    # ==================================
-    # Subparser 6: Contar grades
-    # ==================================
+
+    # ==================================================
+    # Subparser 6: Contar cuántos clips hay por calificación
+    # ==================================================
     subparser_count = subparsers.add_parser(
         "countGrades",
-        help="Muestra cuántos clips hay por calificación"
+        help="Cuenta la cantidad de clips por calificación."
     )
-    subparser_count.add_argument(
-        "--directory",
-        type=str,
-        required=True,
-        help="Carpeta con archivos JSON de coordenadas"
-    )
+    subparser_count.add_argument("--directory", type=str, required=True,
+                                 help="Carpeta con JSONs.")
     subparser_count.set_defaults(func=module_LSTM.count_grades)
 
+    # ==================================================
+    # Subparser 7: ANALIZAR PORCENTAJE DE FRAMES VÁLIDOS
+    # ==================================================
+    subparser_analyze = subparsers.add_parser(
+        "analyzeJSON",
+        help="Analiza archivos JSON para calcular la proporción de frames válidos."
+    )
+    subparser_analyze.add_argument(
+        "--file",
+        type=str,
+        default="",
+        help="Ruta a un archivo JSON para analizar."
+    )
+    subparser_analyze.add_argument(
+        "--directory",
+        type=str,
+        default="",
+        help="Ruta a un directorio. Se analizarán TODOS los JSONs recursivamente."
+    )
+    subparser_analyze.set_defaults(func=module_poseEstimation.run_json_analysis)
 
     # ==================================================
     # Ejecución del comando seleccionado
