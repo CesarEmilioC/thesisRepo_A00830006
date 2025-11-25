@@ -12,19 +12,26 @@ A user-friendly digital interface delivers instant feedback and highlights techn
 
 To replicate the development environment on another machine:
 
-1. Clone the repository:
-   git clone https://github.com/CesarEmilioC/thesisRepo_A00830006.git  
+1. Clone the repository:  
+   ```bash
+   git clone https://github.com/CesarEmilioC/thesisRepo_A00830006.git
    cd THESISREPO_A00830006
+   ```
 
-2. Create the Conda environment from the YAML file:
+2. Create the Conda environment from the YAML file:  
+   ```bash
    conda env create -f environment.yml
+   ```
 
-3. Activate the environment:
+3. Activate the environment:  
+   ```bash
    conda activate tf1
+   ```
 
 4. (Optional) Install additional pip packages:  
-   If you are using `requirements.txt` for pip-only dependencies:  
+   ```bash
    pip install -r requirements.txt
+   ```
 
 This ensures that all dependencies and versions used in development are reproduced accurately.
 
@@ -33,45 +40,53 @@ This ensures that all dependencies and versions used in development are reproduc
 ## 📁 Project Structure (GitHub Repository)
 
 ```bash
-THESISREPO_A00830006/  
-│  
-├── Samples/  
-│   ├── clipSamples/  
-│   │   ├── player1_part1_clip0_grade7.json  
-│   │   ├── player1_part1_clip1_grade6.json  
-│   │   ...  
-│   │   └── player10_partX_clipZ_gradeY.json  
-│   │  
-│   └── coordinateSamples/  
-│       ├── player1_part1_clip0_grade7.json  
-│       ├── player1_part1_clip1_grade6.json  
-│       ...  
-│       └── player10_partX_clipZ_gradeY.json  
-│  
-├── Source/  
-│   ├── Modules/  
-│   │   ├── __pycache__/  
-│   │   ├── module_grapher.py  
-│   │   ├── module_LSTMmodel.py  
-│   │   ├── module_poseEstimation.py  
-│   │   ├── module_train.py  
-│   │   └── module_test.py  
-│   ├── openPoseRequirements/  
+THESISREPO_A00830006/
+│
+├── Coordinates/
+│   ├── player1/
+│   ├── player2/
+|   ├── ...
+│   ├── player9/
+│   └── player10/
+│
+├── Samples/
+│   ├── clipSamples/
+│   │   ├── player10_part1_clip0_grade7.mp4
+│   │   └── player10_part1_clip3_grade8.mp4
+│   │
+│   └── coordinateSamples/
+│       ├── player10_part1_clip0_grade7.json
+│       └── player10_part1_clip3_grade8.json
+│
+├── Source/
+│   ├── Models/
+│   │   └── lstm_model.h5
+│   │
+│   ├── Modules/
+│   │   ├── module_grapher.py
+│   │   ├── module_LSTM.py
+│   │   └── module_poseEstimation.py
+│   │
+│   ├── openPoseRequirements/
 │   └── main.py
-│  
-├── environment.yml  
-├── requirements.txt  
-└── README.md  
+│
+├── environment.yml
+├── LICENSE
+├── README.md
+└── requirements.txt
 ```
 
-- `Source/Modules/`: Contains all functional Python modules for data processing, model training/testing, pose estimation, and visualization.  
-- `Source/main.py`: Main script to execute the system pipeline using command-line arguments.  
-- `openPoseRequirements/`: Contains setup and dependencies related to OpenPose.  
-- `Samples/coordinateSamples`: Stores output JSON files containing metadata and joint coordinates from processed clips.  
-- `Samples/clipSamples`: Stores sample input test video clips for development and testing.  
-- `environment.yml`: Conda environment specification.  
-- `requirements.txt`: Additional pip-based dependencies.  
-- `README.md`: Project documentation (you are here!).  
+### Folder Descriptions
+
+- **Coordinates/** – Contains JSON coordinate files generated from OpenPose, organized by player and video part.
+- **Samples/** – Stores sample videos and their corresponding JSONs for testing and visualization.  
+  - `clipSamples/`: Short video clips of _bandeja_ shots.  
+  - `coordinateSamples/`: Corresponding coordinate data for each clip.  
+- **Source/Modules/** – Contains Python modules for pose estimation, LSTM model training/testing, and data visualization.
+- **Source/Models/** – Stores the trained LSTM model (`lstm_model.h5`).
+- **Source/main.py** – CLI entry point that manages pose extraction, analysis, and LSTM operations.
+- **environment.yml / requirements.txt** – Environment and dependency definitions.
+- **README.md / LICENSE** – Documentation and licensing information.
 
 ---
 
@@ -80,9 +95,10 @@ THESISREPO_A00830006/
 The **Videos** folder is hosted independently on OneDrive (not tracked in Git).  
 It contains the raw recordings, pre-cut clips organized by player and part, and the JSON timestamp files used to generate clips.
 
-The videos folder can be found in the following link: https://tecmx-my.sharepoint.com/:f:/g/personal/a00830006_tec_mx/EuvOsh32lh5El-Aitld6c9UBhsb97xw9q9HbERRJAxOjwg?e=3RdkXB
+🔗 Dataset link:  
+https://tecmx-my.sharepoint.com/:f:/g/personal/a00830006_tec_mx/EuvOsh32lh5El-Aitld6c9UBhsb97xw9q9HbERRJAxOjwg?e=3RdkXB
 
-### Folder Structure (updated with `part1`, `part2`, ... inside `Clips/`)
+### Folder Structure (with `part1`, `part2`, ... inside `Clips/`)
 
 ```bash
 Videos/
@@ -110,31 +126,18 @@ Videos/
 │   │   │   ├── player1_part2_clip1_gradeY.mp4
 │   │   │   ...
 │   │   ...
-│   ├── player2/
-│   │   ├── part1/
-│   │   │   ├── player2_part1_clip1_gradeY.mp4
-│   │   │   ...
-│   │   ├── part2/
-│   │   │   ├── player2_part2_clip1_gradeZ.mp4
-│   │   │   ...
-│   │   ...
-│   ...
 │   └── player10/
 │       ├── part1/
 │       │   ├── player10_part1_clip1_gradeY.mp4
-│       │   │   ...
+│       │   ...
 │       ├── part2/
 │       │   ├── player10_part2_clip1_gradeX.mp4
-│       │   │   ...
-│       ...
+│       │   ...
 │
 ├── Original Video Cuts/
 │   ├── player1/
 │   │   ├── player1_part1.json
 │   │   ├── player1_part2.json
-│   │   ...
-│   ├── player2/
-│   │   ├── player2_part1.json
 │   │   ...
 │   ...
 │   └── player10/
@@ -147,62 +150,131 @@ Videos/
 └── playerSamples_trainingData.xls
 ```
 
-### Naming Conventions
-
-- Players: `player1` ... `player10`
-- Original videos: `player{N}_part{M}.mp4`
-- Cut definitions (JSON): `player{N}_part{M}.json`
-- Clips: stored under `Clips/player{N}/part{M}/`
-  - Filenames: `player{N}_part{M}_clip{K}_grade{G}.mp4`
-    - `N`: player id (1–10)
-    - `M`: part number (1, 2, …)
-    - `K`: sequential clip index within that part (starting from 1)
-    - `G`: grade assigned by a professional (e.g., 6, 7, 8, 9)
-
-### Folder Descriptions
-
-- `Original Videos`: Raw recorded videos of players performing _bandeja_ shots.  
-- `Clips`: Extracted clips from the original videos, each annotated with a grade given by a professional padel player.  
-- `Original Video Cuts`: JSON files containing metadata, timetstamps and grading for clips to be cut from the original videos.  
-- `createClips.py`: Python function to automatically generate clips from original videos into their respective player folders.  
-- `playerSamples_trainingData.xls`: Excel file with metadata related to all 10 players in the dataset.  
-
 ---
 
 ## 🚀 Running the Code
 
-The `main.py` script uses a command-line interface via `argparse` to allow modular execution of the system components. You can run specific tasks such as pose extraction or coordinate plotting by providing the appropriate command-line flags.
+The repository provides a command-line tool (`main.py`) with multiple modules to perform all key operations: pose estimation, visualization, animation, training, prediction, and data validation.
 
-### Example Commands
+### 🧩 General Command Structure
 
-**To extract pose data from a test video using OpenPose:**  
-
-```bash
-cd Source  
-python main.py pose --camera ..\Samples\clipSamples\<video_fileName>.mp4  
-```
-
-**To extract pose data from a test folder using OpenPose:**  
+All commands follow the same syntax:
 
 ```bash
-cd Source  
-python main.py pose --directory <videos_directoryName>\Videos\Clips\<player_playerNumber>.mp4  
+python main.py <command> [arguments]
 ```
 
-This will process the input video and save the extracted joint coordinates (shoulder, elbow, wrist) to a JSON file inside the `Samples/coordinateSamples` directory.
+Run without arguments to display available options:
+
+```bash
+python main.py --help
+```
 
 ---
 
-**To visualize a coordinate file (previously extracted):**  
+### 🎯 1. Pose Estimation with OpenPose
+
+**From a single video:**
 
 ```bash
-cd Source  
-python main.py plot --file ..\Samples\coordinateSamples\<coordinate_filename>.json  
+cd Source
+python main.py pose --camera "../Samples/clipSamples/player10_part1_clip0_grade7.mp4"
 ```
 
-This generates a visual representation of the movement trajectory from the coordinate file. It is useful for comparing technical patterns and analyzing shot quality.
+**From an entire folder of videos:**
 
-> More commands (e.g., training or testing the LSTM model) will be added as development progresses.  
+```bash
+cd Source
+python main.py pose --directory "../Videos/Clips/player10/part1"
+```
+
+Arguments:
+- `--camera`: Path to a video file or camera index (`0` for webcam).
+- `--directory`: Path to a folder containing multiple videos.
+- `--model`: OpenPose model type (`mobilenet_thin`, `cmu`, etc.).
+- `--show_video`: Display the video during processing.
+- `--resize`: Input resolution (e.g., `'432x368'`).
+
+Output: JSON coordinate files saved to the `Coordinates/` folder.
+
+---
+
+### 📊 2. Plot Coordinates (Movement Visualization)
+
+Generates trajectory and temporal plots from JSON data.
+
+```bash
+cd Source
+python main.py plot --file "../Samples/coordinateSamples/player10_part1_clip0_grade7.json" --type all
+```
+
+Types available:
+- `original`: Raw coordinates.
+- `relative`: Relative to the pelvis.
+- `temporal`: Joint evolution over time.
+- `3d`: 3D spatial trajectory.
+- `all`: Generates all plot types.
+
+---
+
+### 🎞️ 3. Animate Movement
+
+Creates an animation of a motion sequence using the extracted coordinates.
+
+```bash
+cd Source
+python main.py animate --file "../Samples/coordinateSamples/player10_part1_clip0_grade7.json"
+```
+
+---
+
+### 🧠 4. Train LSTM Model
+
+Trains the LSTM network using all player coordinate data.
+
+```bash
+cd Source
+python main.py trainLSTM --directory "../Coordinates" --model-path "Models/lstm_model.h5"
+```
+
+Output: A trained model saved as `lstm_model.h5` inside the `Source/Models/` directory.
+
+---
+
+### 🔮 5. Predict Clip Grade (LSTM Inference)
+
+Predicts the quality grade of a clip using the trained LSTM model.
+
+```bash
+cd Source
+python main.py predictLSTM --file "../Samples/coordinateSamples/player10_part1_clip0_grade7.json" --model-path "Models/lstm_model.h5"
+```
+
+Output: Printed predicted grade on the console.
+
+---
+
+### 📈 6. Count Clips per Grade
+
+Counts how many clips exist per grade label across the dataset.
+
+```bash
+cd Source
+python main.py countGrades --directory "../Coordinates"
+```
+
+---
+
+### 🧩 7. Analyze JSON Validity
+
+Computes the proportion of valid frames (frames where all joints were detected).
+
+```bash
+cd Source
+python main.py analyzeJSON --directory "../Coordinates"
+```
+
+Output: Percentage summary of valid frame data per JSON and the overall mean.
 
 ---
 
@@ -213,4 +285,4 @@ Master’s Thesis Student – ITESM
 
 **Marcial Roberto Leyva Fernández**  
 Thesis Advisor  
-School of Engineering and Sciences – Tecnológico de Monterrey  
+School of Engineering and Sciences – Tecnológico de Monterrey
