@@ -239,6 +239,34 @@ python main.py trainLSTM --directory "../Coordinates" --model-path "Models/lstm_
 
 Output: A trained model saved as `lstm_model.h5` inside the `Source/Models/` directory.
 
+#### 📂 LSTM Training Results
+
+Every time you train an LSTM model using this command:
+
+```bash
+cd Source
+python main.py trainLSTM --directory "../Coordinates" --run_name MyExperiment --model_path "Models/lstm_model.h5"
+```
+
+A new folder is automatically created inside the Results/ directory using the provided run_name. Each experiment folder stores all training outputs in a fully reproducible format, including:
+
+Results/
+└── MyExperiment/
+    ├── training_history.json       ← Loss and accuracy values for each epoch
+    ├── learning_curves.png         ← Training/validation loss and accuracy plots
+    ├── confusion_matrix.png        ← Confusion matrix on the test set
+    ├── class_distribution.png      ← True vs predicted class histogram
+    ├── classification_report.txt   ← Precision, recall, and F1-score summary
+    └── lstm_model.h5               ← The trained neural network model
+
+This folder structure allows:
+- Systematic experiment tracking  
+- Easy comparison between multiple training runs  
+- Ready-to-use figures for thesis and presentations  
+- Full reproducibility and transparency of model performance
+
+Each run is self-contained, making it simple to archive, publish, or share results.
+
 ---
 
 ### 🔮 5. Predict Clip Grade (LSTM Inference)
@@ -281,7 +309,8 @@ Output: Percentage summary of valid frame data per JSON and the overall mean.
 ## 👤 Authors
 
 **Cesar Emilio Castaño Marin**  
-Master’s Thesis Student – ITESM  
+Thesis Student
+Computer Science Master’s – Tecnológico de Monterrey  
 
 **Marcial Roberto Leyva Fernández**  
 Thesis Advisor  

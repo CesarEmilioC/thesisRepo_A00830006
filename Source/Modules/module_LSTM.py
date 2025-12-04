@@ -4,19 +4,6 @@ Module: module_LSTM.py
 Author: Cesar Emilio Castaño Marin
 Project: Thesis - Smash Vision / LSTM for Paddle Tennis Analysis
 -------------------------------------------------------------
-Descripción general:
---------------------
-Este módulo implementa todas las funciones necesarias para:
-
-1. Cargar y procesar coordenadas JSON (pose estimation)
-2. Entrenar un modelo LSTM mejorado (Bidirectional + BatchNorm)
-3. Evaluar el modelo con métricas y visualizaciones
-4. Realizar predicciones sobre clips individuales
-5. Analizar la cantidad de clips por calificación (countGrades)
-6. Visualizar la matriz de confusión y un gráfico de barras por clase
-
-El objetivo es construir un pipeline robusto para tu tesis.
--------------------------------------------------------------
 """
 
 # ============================================================
@@ -57,18 +44,6 @@ from keras.callbacks import EarlyStopping
 # ============================================================
 
 def load_all_jsons(base_dir):
-    """
-    Recorre recursivamente la carpeta base y carga todos los JSON
-    con coordenadas de Pelvis, Codo Derecha y Mano Derecha.
-
-    Cada JSON debe tener metadata.grade indicando la calificación.
-
-    Retorna:
-    --------
-    sequences : list(np.ndarray) con forma (frames, 6)
-    labels    : list(int) calificación del clip
-    """
-
     sequences = []
     labels = []
 
@@ -87,14 +62,11 @@ def load_all_jsons(base_dir):
                 elbow  = np.array(data.get("Codo Derecha Referencia", []))
                 hand   = np.array(data.get("Mano Derecha Referencia", []))
 
-                # cortar a mínimo común
                 L = min(len(pelvis), len(elbow), len(hand))
                 if L == 0:
                     continue
 
-                seq = np.concatenate([
-                    pelvis[:L], elbow[:L], hand[:L]
-                ], axis=1)  # (frames, 6)
+                seq = np.concatenate([pelvis[:L], elbow[:L], hand[:L]], axis=1)
 
                 sequences.append(seq)
                 labels.append(grade)
@@ -104,16 +76,10 @@ def load_all_jsons(base_dir):
 
 
 # ============================================================
-# 2. CONTAR GRADES (Nuevo subcomando)
+# 2. CONTADOR DE GRADES
 # ============================================================
 
 def count_grades(args):
-    """
-    Cuenta cuántos clips existen por calificación (grade).
-    Llamado desde main:
-        python main.py countGrades --directory Coordinates
-    """
-
     _, labels = load_all_jsons(args.directory)
 
     if not labels:
@@ -137,19 +103,10 @@ def count_grades(args):
 # ============================================================
 
 def prepare_data(sequences, labels, max_len=120):
-    """
-    Normaliza secuencias (z-score), aplica padding / truncamiento
-    y crea el split train-test.
-
-    Retorna:
-    --------
-    X_train, X_test : arrays (N, max_len, 6)
-    y_train, y_test : arrays (N,)
-    """
-
-    normalized = [(seq - np.mean(seq, axis=0)) /
-                  (np.std(seq, axis=0) + 1e-8)
-                  for seq in sequences]
+    normalized = [
+        (seq - np.mean(seq, axis=0)) / (np.std(seq, axis=0) + 1e-8)
+        for seq in sequences
+    ]
 
     X = pad_sequences(
         normalized,
@@ -159,17 +116,13 @@ def prepare_data(sequences, labels, max_len=120):
         truncating='post'
     )
 
-    y = np.array(labels) - 1  # convertir 1–10 → 0–9
+    y = np.array(labels) - 1  
 
     counts = Counter(y)
-
-    # algunas clases tienen <2 muestras → no se puede estratificar
     stratify_val = y if min(counts.values()) >= 2 else None
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2,
-        random_state=42,
-        stratify=stratify_val
+        X, y, test_size=0.2, random_state=42, stratify=stratify_val
     )
 
     print(f"[INFO] Train: {len(X_train)} / Test: {len(X_test)}")
@@ -177,18 +130,10 @@ def prepare_data(sequences, labels, max_len=120):
 
 
 # ============================================================
-# 4. MODELO LSTM MEJORADO
+# 4. MODELO LSTM
 # ============================================================
 
 def create_lstm_model(input_shape, num_classes=10):
-    """
-    Modelo LSTM robusto para capturar dinámica temporal de movimiento.
-    Incluye:
-    - BatchNormalization
-    - Bidirectional LSTM profundo
-    - Dropout
-    """
-
     model = Sequential([
         BatchNormalization(),
 
@@ -214,14 +159,30 @@ def create_lstm_model(input_shape, num_classes=10):
 
 
 # ============================================================
-# 5. ENTRENAMIENTO DEL MODELO
+# 5. ENTRENAMIENTO + GUARDADO DE RESULTADOS
 # ============================================================
 
 def train_model(args):
     """
-    Entrena el modelo LSTM sobre la carpeta Coordinates/
+    Entrena el modelo LSTM y guarda:
+    - history.json
+    - learning_curves.png
+    - confusion_matrix.png
+    - class_distribution.png
+    - classification_report.txt
+    - modelo .h5
     """
 
+    # --------------------------------------------------------
+    # CREAR CARPETA DE RESULTADOS
+    # --------------------------------------------------------
+    results_dir = os.path.join("Results", args.run_name)
+    os.makedirs(results_dir, exist_ok=True)
+    print(f"[INFO] Guardando resultados en: {results_dir}")
+
+    # --------------------------------------------------------
+    # CARGA + PREPROCESAMIENTO
+    # --------------------------------------------------------
     seqs, labels = load_all_jsons(args.directory)
     X_train, X_test, y_train, y_test = prepare_data(seqs, labels)
 
@@ -235,6 +196,9 @@ def train_model(args):
         restore_best_weights=True
     )
 
+    # --------------------------------------------------------
+    # ENTRENAR
+    # --------------------------------------------------------
     history = model.fit(
         X_train, y_train,
         epochs=80,
@@ -244,30 +208,68 @@ def train_model(args):
         verbose=1
     )
 
+    # --------------------------------------------------------
+    # GUARDAR HISTORIAL
+    # --------------------------------------------------------
+    history_path = os.path.join(results_dir, "training_history.json")
+    with open(history_path, "w") as f:
+        json.dump(history.history, f, indent=4)
+    print(f"[INFO] Historial guardado en {history_path}")
+
+    # --------------------------------------------------------
+    # GUARDAR CURVAS DE APRENDIZAJE
+    # --------------------------------------------------------
+    learning_curve_path = os.path.join(results_dir, "learning_curves.png")
+
+    plt.figure(figsize=(10, 6))
+
+    # Loss
+    plt.subplot(2, 1, 1)
+    plt.plot(history.history["loss"], label="Training Loss")
+    plt.plot(history.history["val_loss"], label="Validation Loss")
+    plt.title("Learning Curves - Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.grid(True)
+
+    # Accuracy
+    plt.subplot(2, 1, 2)
+    plt.plot(history.history["accuracy"], label="Training Accuracy")
+    plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
+    plt.title("Learning Curves - Accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(learning_curve_path, dpi=300)
+    plt.close()
+    print(f"[INFO] Curvas guardadas en {learning_curve_path}")
+
+    # --------------------------------------------------------
+    # GUARDAR MODELO
+    # --------------------------------------------------------
     os.makedirs(os.path.dirname(args.model_path), exist_ok=True)
     model.save(args.model_path)
-
     print(f"[INFO] Modelo guardado en {args.model_path}")
 
-    evaluate_model(model, X_test, y_test)
+    # --------------------------------------------------------
+    # EVALUACIÓN FINAL
+    # --------------------------------------------------------
+    evaluate_model(model, X_test, y_test, results_dir)
 
 
 # ============================================================
-# 6. VISUALIZACIONES Y MÉTRICAS
+# 6. MÉTRICAS + FIGURAS
 # ============================================================
 
-def plot_class_distribution(y_true, y_pred):
-    """
-    Dibuja un gráfico de barras comparando:
-    - cantidad real por clase
-    - cantidad predicha por clase
-    """
-
+def plot_class_distribution(y_true, y_pred, save_path=None):
     true_counts = Counter(y_true)
     pred_counts = Counter(y_pred)
 
     labels = sorted(set(list(true_counts.keys()) + list(pred_counts.keys())))
-
     real = [true_counts.get(l, 0) for l in labels]
     pred = [pred_counts.get(l, 0) for l in labels]
 
@@ -278,43 +280,45 @@ def plot_class_distribution(y_true, y_pred):
     plt.bar(x + 0.2, pred, width=0.4, label="Predicho")
 
     plt.xticks(x, [l + 1 for l in labels])
-    plt.title("Distribución por clase (Real vs Predicho)")
+    plt.title("Real vs Predicho")
     plt.xlabel("Clase (Grade)")
-    plt.ylabel("Cantidad de clips")
+    plt.ylabel("Clips")
     plt.legend()
     plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+        print(f"[INFO] Gráfico de distribución guardado en {save_path}")
+
     plt.show()
 
 
-def evaluate_model(model, X_test, y_test):
-    """
-    Evalúa el modelo y genera:
-    - Accuracy
-    - Classification report (una sola vez)
-    - Matriz de confusión
-    - Gráfico de barras (Real vs Predicho)
-    """
+def evaluate_model(model, X_test, y_test, results_dir=None):
 
-    # predicciones (silenciado)
     y_pred = np.argmax(model.predict(X_test, verbose=0), axis=1)
 
-    # accuracy
     acc = accuracy_score(y_test, y_pred)
     print(f"\n🎯 Accuracy: {acc:.4f}\n")
 
-    # clasificación sin duplicados
     valid_labels = sorted(set(y_test))
+    report = classification_report(
+        y_test, y_pred, digits=3,
+        zero_division=0, labels=valid_labels
+    )
 
     print("📊 Reporte de Clasificación:\n")
-    print(classification_report(
-        y_test,
-        y_pred,
-        digits=3,
-        zero_division=0,
-        labels=valid_labels
-    ))
+    print(report)
 
-    # matriz de confusión
+    # Guardar reporte
+    if results_dir:
+        report_path = os.path.join(results_dir, "classification_report.txt")
+        with open(report_path, "w") as f:
+            f.write(report)
+        print(f"[INFO] Reporte guardado en {report_path}")
+
+    # ------------------------------------------
+    # Matriz de confusión
+    # ------------------------------------------
     cm = confusion_matrix(y_test, y_pred, labels=valid_labels)
 
     plt.figure(figsize=(8, 6))
@@ -327,22 +331,31 @@ def evaluate_model(model, X_test, y_test):
     )
     plt.xlabel("Predicción")
     plt.ylabel("Real")
-    plt.title("Matriz de Confusión (Grades)")
+    plt.title("Matriz de Confusión")
+    plt.tight_layout()
+
+    if results_dir:
+        cm_path = os.path.join(results_dir, "confusion_matrix.png")
+        plt.savefig(cm_path, dpi=300)
+        print(f"[INFO] Matriz guardada en {cm_path}")
+
     plt.show()
 
-    # gráfico de barras por clase
-    plot_class_distribution(y_test, y_pred)
+    # ------------------------------------------
+    # Distribución por clase
+    # ------------------------------------------
+    if results_dir:
+        bar_path = os.path.join(results_dir, "class_distribution.png")
+        plot_class_distribution(y_test, y_pred, save_path=bar_path)
+    else:
+        plot_class_distribution(y_test, y_pred)
 
 
 # ============================================================
-# 7. PREDICCIÓN DE NUEVOS CLIPS
+# 7. PREDICCIÓN DE CLIPS
 # ============================================================
 
 def predict_clip(args):
-    """
-    Predice la calificación de un clip JSON individual.
-    """
-
     model = load_model(args.model_path)
     print(f"[INFO] Modelo cargado desde {args.model_path}")
 
@@ -354,9 +367,7 @@ def predict_clip(args):
     hand   = np.array(data.get("Mano Derecha Referencia", []))
 
     L = min(len(pelvis), len(elbow), len(hand))
-    sequence = np.concatenate(
-        [pelvis[:L], elbow[:L], hand[:L]], axis=1
-    )
+    sequence = np.concatenate([pelvis[:L], elbow[:L], hand[:L]], axis=1)
 
     sequence = (sequence - np.mean(sequence, axis=0)) / (np.std(sequence, axis=0) + 1e-8)
     sequence = np.expand_dims(sequence, axis=0)
