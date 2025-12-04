@@ -250,6 +250,7 @@ python main.py trainLSTM --directory "../Coordinates" --run_name MyExperiment --
 
 A new folder is automatically created inside the Results/ directory using the provided run_name. Each experiment folder stores all training outputs in a fully reproducible format, including:
 
+```bash
 Results/
 └── MyExperiment/
     ├── training_history.json       ← Loss and accuracy values for each epoch
@@ -258,14 +259,7 @@ Results/
     ├── class_distribution.png      ← True vs predicted class histogram
     ├── classification_report.txt   ← Precision, recall, and F1-score summary
     └── lstm_model.h5               ← The trained neural network model
-
-This folder structure allows:
-- Systematic experiment tracking  
-- Easy comparison between multiple training runs  
-- Ready-to-use figures for thesis and presentations  
-- Full reproducibility and transparency of model performance
-
-Each run is self-contained, making it simple to archive, publish, or share results.
+```
 
 ---
 
