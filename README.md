@@ -45,7 +45,7 @@ THESISREPO_A00830006/
 ├── Coordinates/
 │   ├── player1/
 │   ├── player2/
-|   ├── ...
+│   ├── ...
 │   ├── player9/
 │   └── player10/
 │
@@ -307,5 +307,5 @@ Thesis Student
 Computer Science Master’s – Tecnológico de Monterrey  
 
 **Marcial Roberto Leyva Fernández**  
-Thesis Advisor  
+Thesis Advisor
 School of Engineering and Sciences – Tecnológico de Monterrey
