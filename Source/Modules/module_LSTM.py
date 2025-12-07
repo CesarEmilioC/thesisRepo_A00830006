@@ -15,6 +15,7 @@ import json
 import numpy as np
 from tqdm import tqdm
 from collections import Counter
+from datetime import datetime
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
@@ -102,7 +103,7 @@ def count_grades(args):
 # 3. PREPROCESAMIENTO
 # ============================================================
 
-def prepare_data(sequences, labels, max_len=120):
+def prepare_data(sequences, labels, max_len=90):
     normalized = [
         (seq - np.mean(seq, axis=0)) / (np.std(seq, axis=0) + 1e-8)
         for seq in sequences
@@ -176,7 +177,9 @@ def train_model(args):
     # --------------------------------------------------------
     # CREAR CARPETA DE RESULTADOS
     # --------------------------------------------------------
-    results_dir = os.path.join("Results", args.run_name)
+    # Fecha en formato dd-mm-yy
+    date_str = datetime.now().strftime("%d-%m-%y")
+    results_dir = os.path.join("Results", f"{args.run_name}_{date_str}")
     os.makedirs(results_dir, exist_ok=True)
     print(f"[INFO] Guardando resultados en: {results_dir}")
 
