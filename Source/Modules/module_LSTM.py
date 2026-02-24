@@ -7,12 +7,14 @@ Project: Thesis - Smash Vision / LSTM for Paddle Tennis Analysis
 """
 
 # ============================================================
-# IMPORTACIONES
+# IMPORTS
 # ============================================================
 
 import os
 import json
+import argparse
 import numpy as np
+from typing import List, Tuple, Optional
 from tqdm import tqdm
 from collections import Counter
 from datetime import datetime
@@ -23,6 +25,7 @@ from sklearn.metrics import (
     confusion_matrix,
     accuracy_score
 )
+from sklearn.utils.class_weight import compute_class_weight
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -39,12 +42,24 @@ from keras.layers import (
 from keras.utils import pad_sequences
 from keras.callbacks import EarlyStopping
 
+import config
+
 
 # ============================================================
-# 1. CARGA DE ARCHIVOS JSON
+# 1. JSON FILE LOADING
 # ============================================================
 
-def load_all_jsons(base_dir):
+def load_all_jsons(base_dir: str) -> Tuple[List[np.ndarray], List[int]]:
+    """Load all JSON coordinate files recursively from base_dir.
+
+    Returns a tuple of (sequences, labels) where each sequence is a numpy
+    array of shape (num_frames, 8) containing pelvis + shoulder + elbow + wrist
+    relative coordinates (2D each = 8 features), and each label is the grade (1-10).
+
+    If a JSON does not contain the shoulder field (older 3-keypoint format),
+    it is still loaded with 6 features for backward compatibility, but a
+    warning is printed.
+    """
     sequences = []
     labels = []
 
@@ -59,55 +74,103 @@ def load_all_jsons(base_dir):
                 meta = data.get("metadata", {})
                 grade = int(meta.get("grade", 0))
 
-                pelvis = np.array(data.get("Pelvis", []))
-                elbow  = np.array(data.get("Codo Derecha Referencia", []))
-                hand   = np.array(data.get("Mano Derecha Referencia", []))
+                pelvis   = np.array(data.get(config.FIELD_PELVIS, []))
+                shoulder = np.array(data.get(config.FIELD_SHOULDER_RELATIVE, []))
+                elbow    = np.array(data.get(config.FIELD_ELBOW_RELATIVE, []))
+                hand     = np.array(data.get(config.FIELD_WRIST_RELATIVE, []))
 
-                L = min(len(pelvis), len(elbow), len(hand))
+                has_shoulder = len(shoulder) > 0
+
+                if has_shoulder:
+                    L = min(len(pelvis), len(shoulder), len(elbow), len(hand))
+                else:
+                    L = min(len(pelvis), len(elbow), len(hand))
+
                 if L == 0:
+                    print(f"[WARNING] Skipping empty sequence: {path}")
                     continue
 
-                seq = np.concatenate([pelvis[:L], elbow[:L], hand[:L]], axis=1)
+                if has_shoulder:
+                    seq = np.concatenate(
+                        [pelvis[:L], shoulder[:L], elbow[:L], hand[:L]], axis=1
+                    )
+                else:
+                    print(f"[WARNING] No shoulder data in {file}, loading with 6 features")
+                    seq = np.concatenate(
+                        [pelvis[:L], elbow[:L], hand[:L]], axis=1
+                    )
 
                 sequences.append(seq)
                 labels.append(grade)
 
-    print(f"[INFO] Se cargaron {len(sequences)} clips desde {base_dir}")
+    print(f"[INFO] Loaded {len(sequences)} clips from {base_dir}")
     return sequences, labels
 
 
 # ============================================================
-# 2. CONTADOR DE GRADES
+# 2. GRADE COUNTER
 # ============================================================
 
-def count_grades(args):
+def count_grades(args: argparse.Namespace) -> None:
     _, labels = load_all_jsons(args.directory)
 
     if not labels:
-        print("[ERROR] No hay JSONs con calificaciones.")
+        print("[ERROR] No JSONs with grades found.")
         return
 
-    counter = Counter(labels)
+    grade_counter = Counter(labels)
 
     print("\n============================")
-    print(" DISTRIBUCIÓN DE CALIFICACIONES")
+    print(" GRADE DISTRIBUTION (1-10)")
     print("============================\n")
 
-    for g in sorted(counter.keys()):
-        print(f"Grade {g}: {counter[g]} clips")
+    for g in sorted(grade_counter.keys()):
+        print(f"Grade {g}: {grade_counter[g]} clips")
 
-    print("\n============================\n")
+    # Also show 5-class distribution
+    class_labels_list = [config.grade_to_class(g) for g in labels]
+    class_counter = Counter(class_labels_list)
+
+    print("\n============================")
+    print(" CLASS DISTRIBUTION (5 classes)")
+    print("============================\n")
+
+    for c in sorted(class_counter.keys()):
+        print(f"Class {c} ({config.CLASS_LABELS[c]}): {class_counter[c]} clips")
+
+    print(f"\nTotal clips: {len(labels)}")
+    print("============================\n")
 
 
 # ============================================================
-# 3. PREPROCESAMIENTO
+# 3. PREPROCESSING
 # ============================================================
 
-def prepare_data(sequences, labels, max_len=90):
-    normalized = [
-        (seq - np.mean(seq, axis=0)) / (np.std(seq, axis=0) + 1e-8)
-        for seq in sequences
-    ]
+def normalize_sequence(sequence: np.ndarray) -> np.ndarray:
+    """Normalize a single sequence using per-feature zero-mean, unit-variance normalization.
+
+    Each clip is normalized independently (per-clip normalization).
+    The same function is used during both training and inference.
+
+    Parameters
+    ----------
+    sequence : np.ndarray
+        Shape (timesteps, features). Raw coordinate sequence.
+
+    Returns
+    -------
+    np.ndarray
+        Normalized sequence with the same shape.
+    """
+    mean = np.mean(sequence, axis=0)
+    std = np.std(sequence, axis=0) + config.NORMALIZATION_EPSILON
+    return (sequence - mean) / std
+
+
+def prepare_data(sequences: List[np.ndarray], labels: List[int],
+                  max_len: int = config.MAX_SEQUENCE_LENGTH) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Normalize, pad, and split sequences into train/test sets."""
+    normalized = [normalize_sequence(seq) for seq in sequences]
 
     X = pad_sequences(
         normalized,
@@ -117,7 +180,13 @@ def prepare_data(sequences, labels, max_len=90):
         truncating='post'
     )
 
-    y = np.array(labels) - 1  
+    # Grade labels are 1-10 in the data. Map to 5 classes using config.grade_to_class():
+    #   Grade 1-2 -> Class 0 (Very Low)
+    #   Grade 3-4 -> Class 1 (Low)
+    #   Grade 5-6 -> Class 2 (Medium)
+    #   Grade 7-8 -> Class 3 (High)
+    #   Grade 9-10 -> Class 4 (Excellent)
+    y = np.array([config.grade_to_class(g) for g in labels])
 
     counts = Counter(y)
     stratify_val = y if min(counts.values()) >= 2 else None
@@ -131,20 +200,20 @@ def prepare_data(sequences, labels, max_len=90):
 
 
 # ============================================================
-# 4. MODELO LSTM
+# 4. LSTM MODEL
 # ============================================================
 
-def create_lstm_model(input_shape, num_classes=10):
+def create_lstm_model(input_shape: Tuple[int, int], num_classes: int = config.NUM_CLASSES) -> Sequential:
     model = Sequential([
         BatchNormalization(),
 
-        Bidirectional(LSTM(128, return_sequences=True)),
-        Dropout(0.30),
+        Bidirectional(LSTM(config.LSTM_UNITS_L1, return_sequences=True)),
+        Dropout(config.DROPOUT_L1),
 
-        Bidirectional(LSTM(64)),
-        Dropout(0.25),
+        Bidirectional(LSTM(config.LSTM_UNITS_L2)),
+        Dropout(config.DROPOUT_L2),
 
-        Dense(64, activation='relu'),
+        Dense(config.DENSE_UNITS, activation='relu'),
         BatchNormalization(),
 
         Dense(num_classes, activation='softmax')
@@ -160,33 +229,39 @@ def create_lstm_model(input_shape, num_classes=10):
 
 
 # ============================================================
-# 5. ENTRENAMIENTO + GUARDADO DE RESULTADOS
+# 5. TRAINING + SAVING RESULTS
 # ============================================================
 
-def train_model(args):
-    """
-    Entrena el modelo LSTM y guarda:
-    - history.json
-    - learning_curves.png
-    - confusion_matrix.png
-    - class_distribution.png
-    - classification_report.txt
-    - modelo .h5
-    """
+def train_model(args: argparse.Namespace) -> None:
+    """Train the LSTM model and save results (history, plots, metrics, model)."""
+
+    if not os.path.isdir(args.directory):
+        print(f"[ERROR] Directory not found: {args.directory}")
+        return
 
     # --------------------------------------------------------
-    # CREAR CARPETA DE RESULTADOS
+    # CREATE RESULTS FOLDER
     # --------------------------------------------------------
-    # Fecha en formato dd-mm-yy
     date_str = datetime.now().strftime("%d-%m-%y")
-    results_dir = os.path.join("Results", f"{args.run_name}_{date_str}")
+    results_dir = os.path.join(config.RESULTS_DIR, f"{args.run_name}_{date_str}")
     os.makedirs(results_dir, exist_ok=True)
-    print(f"[INFO] Guardando resultados en: {results_dir}")
+    print(f"[INFO] Saving results to: {results_dir}")
 
     # --------------------------------------------------------
-    # CARGA + PREPROCESAMIENTO
+    # LOAD + PREPROCESS
     # --------------------------------------------------------
     seqs, labels = load_all_jsons(args.directory)
+
+    if len(seqs) == 0:
+        print("[ERROR] No valid sequences loaded. Check the directory path and JSON format.")
+        return
+
+    unique_grades = sorted(set(labels))
+    print(f"[INFO] Grades found: {unique_grades} ({len(unique_grades)} unique grades)")
+    unique_classes = sorted(set(config.grade_to_class(g) for g in labels))
+    class_names = [config.CLASS_LABELS[c] for c in unique_classes]
+    print(f"[INFO] Classes mapped: {list(zip(unique_classes, class_names))} ({len(unique_classes)} of {config.NUM_CLASSES} classes)")
+
     X_train, X_test, y_train, y_test = prepare_data(seqs, labels)
 
     model = create_lstm_model(
@@ -195,32 +270,39 @@ def train_model(args):
 
     early = EarlyStopping(
         monitor='val_loss',
-        patience=12,
+        patience=config.EARLY_STOPPING_PATIENCE,
         restore_best_weights=True
     )
 
+    # Compute class weights to handle class imbalance
+    unique_train_classes = np.unique(y_train)
+    cw = compute_class_weight('balanced', classes=unique_train_classes, y=y_train)
+    class_weight_dict = {int(c): w for c, w in zip(unique_train_classes, cw)}
+    print(f"[INFO] Class weights: {class_weight_dict}")
+
     # --------------------------------------------------------
-    # ENTRENAR
+    # TRAIN
     # --------------------------------------------------------
     history = model.fit(
         X_train, y_train,
-        epochs=80,
-        batch_size=16,
+        epochs=config.EPOCHS,
+        batch_size=config.BATCH_SIZE,
         validation_split=0.2,
         callbacks=[early],
+        class_weight=class_weight_dict,
         verbose=1
     )
 
     # --------------------------------------------------------
-    # GUARDAR HISTORIAL
+    # SAVE TRAINING HISTORY
     # --------------------------------------------------------
     history_path = os.path.join(results_dir, "training_history.json")
     with open(history_path, "w") as f:
         json.dump(history.history, f, indent=4)
-    print(f"[INFO] Historial guardado en {history_path}")
+    print(f"[INFO] History saved to {history_path}")
 
     # --------------------------------------------------------
-    # GUARDAR CURVAS DE APRENDIZAJE
+    # SAVE LEARNING CURVES
     # --------------------------------------------------------
     learning_curve_path = os.path.join(results_dir, "learning_curves.png")
 
@@ -249,103 +331,114 @@ def train_model(args):
     plt.tight_layout()
     plt.savefig(learning_curve_path, dpi=300)
     plt.close()
-    print(f"[INFO] Curvas guardadas en {learning_curve_path}")
+    print(f"[INFO] Learning curves saved to {learning_curve_path}")
 
     # --------------------------------------------------------
-    # GUARDAR MODELO
+    # SAVE MODEL
     # --------------------------------------------------------
     os.makedirs(os.path.dirname(args.model_path), exist_ok=True)
     model.save(args.model_path)
-    print(f"[INFO] Modelo guardado en {args.model_path}")
+    print(f"[INFO] Model saved to {args.model_path}")
+
+    # Also save a copy of the model in the results directory for reproducibility
+    results_model_path = os.path.join(results_dir, "lstm_model.h5")
+    model.save(results_model_path)
+    print(f"[INFO] Model copy saved to {results_model_path}")
 
     # --------------------------------------------------------
-    # EVALUACIÓN FINAL
+    # FINAL EVALUATION
     # --------------------------------------------------------
     evaluate_model(model, X_test, y_test, results_dir)
 
 
 # ============================================================
-# 6. MÉTRICAS + FIGURAS
+# 6. METRICS + PLOTS
 # ============================================================
 
-def plot_class_distribution(y_true, y_pred, save_path=None):
+def plot_class_distribution(y_true: np.ndarray, y_pred: np.ndarray, save_path: Optional[str] = None) -> None:
     true_counts = Counter(y_true)
     pred_counts = Counter(y_pred)
 
-    labels = sorted(set(list(true_counts.keys()) + list(pred_counts.keys())))
-    real = [true_counts.get(l, 0) for l in labels]
-    pred = [pred_counts.get(l, 0) for l in labels]
+    all_classes = sorted(set(list(true_counts.keys()) + list(pred_counts.keys())))
+    real = [true_counts.get(c, 0) for c in all_classes]
+    pred = [pred_counts.get(c, 0) for c in all_classes]
 
     plt.figure(figsize=(10, 6))
-    x = np.arange(len(labels))
+    x = np.arange(len(all_classes))
 
-    plt.bar(x - 0.2, real, width=0.4, label="Real")
-    plt.bar(x + 0.2, pred, width=0.4, label="Predicho")
+    plt.bar(x - 0.2, real, width=0.4, label="True")
+    plt.bar(x + 0.2, pred, width=0.4, label="Predicted")
 
-    plt.xticks(x, [l + 1 for l in labels])
-    plt.title("Real vs Predicho")
-    plt.xlabel("Clase (Grade)")
+    tick_labels = [config.CLASS_LABELS[c] if c < len(config.CLASS_LABELS) else str(c) for c in all_classes]
+    plt.xticks(x, tick_labels, rotation=15)
+    plt.title("True vs Predicted Class Distribution")
+    plt.xlabel("Class")
     plt.ylabel("Clips")
     plt.legend()
     plt.tight_layout()
 
     if save_path:
         plt.savefig(save_path, dpi=300)
-        print(f"[INFO] Gráfico de distribución guardado en {save_path}")
+        plt.close()
+        print(f"[INFO] Distribution plot saved to {save_path}")
+    else:
+        plt.show()
 
-    plt.show()
 
-
-def evaluate_model(model, X_test, y_test, results_dir=None):
+def evaluate_model(model: Sequential, X_test: np.ndarray, y_test: np.ndarray,
+                    results_dir: Optional[str] = None) -> None:
 
     y_pred = np.argmax(model.predict(X_test, verbose=0), axis=1)
 
     acc = accuracy_score(y_test, y_pred)
-    print(f"\n🎯 Accuracy: {acc:.4f}\n")
+    print(f"\n[RESULT] Accuracy: {acc:.4f}\n")
 
     valid_labels = sorted(set(y_test))
+    target_names = [config.CLASS_LABELS[c] if c < len(config.CLASS_LABELS) else str(c) for c in valid_labels]
     report = classification_report(
         y_test, y_pred, digits=3,
-        zero_division=0, labels=valid_labels
+        zero_division=0, labels=valid_labels,
+        target_names=target_names
     )
 
-    print("📊 Reporte de Clasificación:\n")
+    print("[INFO] Classification Report:\n")
     print(report)
 
-    # Guardar reporte
     if results_dir:
         report_path = os.path.join(results_dir, "classification_report.txt")
         with open(report_path, "w") as f:
+            f.write(f"Accuracy: {acc:.4f}\n\n")
             f.write(report)
-        print(f"[INFO] Reporte guardado en {report_path}")
+        print(f"[INFO] Report saved to {report_path}")
 
     # ------------------------------------------
-    # Matriz de confusión
+    # Confusion Matrix
     # ------------------------------------------
-    cm = confusion_matrix(y_test, y_pred, labels=valid_labels)
+    cm_data = confusion_matrix(y_test, y_pred, labels=valid_labels)
 
     plt.figure(figsize=(8, 6))
     sns.heatmap(
-        cm,
+        cm_data,
         annot=True,
         cmap="Blues",
-        xticklabels=[v + 1 for v in valid_labels],
-        yticklabels=[v + 1 for v in valid_labels]
+        xticklabels=target_names,
+        yticklabels=target_names
     )
-    plt.xlabel("Predicción")
-    plt.ylabel("Real")
-    plt.title("Matriz de Confusión")
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
+    plt.title("Confusion Matrix")
     plt.tight_layout()
 
     if results_dir:
         cm_path = os.path.join(results_dir, "confusion_matrix.png")
         plt.savefig(cm_path, dpi=300)
-        print(f"[INFO] Matriz guardada en {cm_path}")
-
-    plt.show()
+        plt.close()
+        print(f"[INFO] Confusion matrix saved to {cm_path}")
+    else:
+        plt.show()
 
     # ------------------------------------------
-    # Distribución por clase
+    # Class Distribution
     # ------------------------------------------
     if results_dir:
         bar_path = os.path.join(results_dir, "class_distribution.png")
@@ -355,27 +448,55 @@ def evaluate_model(model, X_test, y_test, results_dir=None):
 
 
 # ============================================================
-# 7. PREDICCIÓN DE CLIPS
+# 7. CLIP PREDICTION
 # ============================================================
 
-def predict_clip(args):
+def predict_clip(args: argparse.Namespace) -> int:
+    """Predict the quality grade of a single clip using a trained LSTM model."""
+
+    if not os.path.isfile(args.file):
+        print(f"[ERROR] JSON file not found: {args.file}")
+        return -1
+    if not os.path.isfile(args.model_path):
+        print(f"[ERROR] Model file not found: {args.model_path}")
+        return -1
+
     model = load_model(args.model_path)
-    print(f"[INFO] Modelo cargado desde {args.model_path}")
+    print(f"[INFO] Model loaded from {args.model_path}")
 
     with open(args.file, "r") as f:
         data = json.load(f)
 
-    pelvis = np.array(data.get("Pelvis", []))
-    elbow  = np.array(data.get("Codo Derecha Referencia", []))
-    hand   = np.array(data.get("Mano Derecha Referencia", []))
+    pelvis   = np.array(data.get(config.FIELD_PELVIS, []))
+    shoulder = np.array(data.get(config.FIELD_SHOULDER_RELATIVE, []))
+    elbow    = np.array(data.get(config.FIELD_ELBOW_RELATIVE, []))
+    hand     = np.array(data.get(config.FIELD_WRIST_RELATIVE, []))
 
-    L = min(len(pelvis), len(elbow), len(hand))
-    sequence = np.concatenate([pelvis[:L], elbow[:L], hand[:L]], axis=1)
+    has_shoulder = len(shoulder) > 0
+    if has_shoulder:
+        L = min(len(pelvis), len(shoulder), len(elbow), len(hand))
+        sequence = np.concatenate(
+            [pelvis[:L], shoulder[:L], elbow[:L], hand[:L]], axis=1
+        )
+    else:
+        L = min(len(pelvis), len(elbow), len(hand))
+        sequence = np.concatenate([pelvis[:L], elbow[:L], hand[:L]], axis=1)
 
-    sequence = (sequence - np.mean(sequence, axis=0)) / (np.std(sequence, axis=0) + 1e-8)
-    sequence = np.expand_dims(sequence, axis=0)
+    sequence = normalize_sequence(sequence)
 
-    pred = np.argmax(model.predict(sequence, verbose=0), axis=1)[0] + 1
+    # Pad/truncate to match training input shape (MAX_SEQUENCE_LENGTH frames)
+    sequence = pad_sequences(
+        [sequence],
+        maxlen=config.MAX_SEQUENCE_LENGTH,
+        dtype='float32',
+        padding='post',
+        truncating='post'
+    )
+    # sequence shape is now (1, MAX_SEQUENCE_LENGTH, features)
 
-    print(f"\n🎯 Calificación estimada: {pred}/10\n")
-    return pred
+    # Get predicted class (0-4)
+    pred_class = np.argmax(model.predict(sequence, verbose=0), axis=1)[0]
+    class_label = config.CLASS_LABELS[pred_class] if pred_class < len(config.CLASS_LABELS) else str(pred_class)
+
+    print(f"\n[RESULT] Predicted class: {pred_class} ({class_label})\n")
+    return pred_class
