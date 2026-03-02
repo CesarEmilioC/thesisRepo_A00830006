@@ -230,6 +230,28 @@ def analyze_video(video_path: str, args: argparse.Namespace, show_video: bool = 
                     raw_timestamps.append(timestamp_sec)
 
         if show_video:
+            # Draw our 4 tracked keypoints on the frame
+            if raw_pelvis:
+                H = frame.shape[0]
+                def to_pixel(pt):
+                    if pt and not (pt[0] != pt[0]):  # not NaN
+                        return (int(pt[0]), H - int(pt[1]))
+                    return None
+
+                p = to_pixel(raw_pelvis[-1])
+                s = to_pixel(raw_shoulder[-1])
+                e = to_pixel(raw_elbow[-1])
+                w = to_pixel(raw_wrist[-1])
+
+                if p:
+                    cv2.circle(frame, p, 8, (0, 255, 0), -1)      # Pelvis: green
+                if s:
+                    cv2.circle(frame, s, 8, (255, 150, 0), -1)    # Shoulder: blue
+                if e:
+                    cv2.circle(frame, e, 8, (0, 255, 255), -1)    # Elbow: yellow
+                if w:
+                    cv2.circle(frame, w, 8, (0, 0, 255), -1)      # Wrist: red
+
             cv2.imshow("Pose Estimation", frame)
             if cv2.waitKey(1) == 27:
                 break
