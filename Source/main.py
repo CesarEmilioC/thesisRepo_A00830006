@@ -11,10 +11,12 @@ functionality through subcommands:
     plot         Visualize coordinate data from JSON files (original,
                  relative, temporal, 3D, or all plot types).
     animate      Create an animation of the detected movement sequence.
-    trainLSTM    Train the Bidirectional LSTM model on coordinate data
-                 to predict movement quality grades.
-    predictLSTM  Predict the quality grade of a single clip using a
-                 trained LSTM model.
+    trainLSTM    Train the Bidirectional LSTM model on coordinate data.
+    predictLSTM  Predict quality grade using a trained LSTM model.
+    trainGRU     Train the Bidirectional GRU model on coordinate data.
+    predictGRU   Predict quality grade using a trained GRU model.
+    trainTCN     Train the TCN (Temporal Convolutional Network) model.
+    predictTCN   Predict quality grade using a trained TCN model.
     countGrades  Count how many clips exist per grade across the dataset.
     analyzeJSON  Analyze JSON data quality by computing the proportion
                  of valid frames (frames where all joints were detected).
@@ -43,6 +45,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'Modu
 import Modules.module_poseEstimation as module_poseEstimation
 import Modules.module_grapher as module_grapher
 import Modules.module_LSTM as module_LSTM
+import Modules.module_GRU as module_GRU
+import Modules.module_TCN as module_TCN
 
 
 def main() -> None:
@@ -112,12 +116,10 @@ def main() -> None:
     subparser_train = subparsers.add_parser(
         "trainLSTM",
         help="Train the Bidirectional LSTM model on coordinate data.",
-        epilog='Example: python main.py trainLSTM --directory "../Coordinates" --run_name Test01 --model_path "Models/lstm_model.h5"'
+        epilog='Example: python main.py trainLSTM --directory "../Coordinates" --model_path "Models/lstm_model.h5"'
     )
     subparser_train.add_argument("--directory", type=str, required=True,
                                  help="Path to directory containing JSON coordinate files.")
-    subparser_train.add_argument("--run_name", type=str, required=True,
-                                 help="Name for the results folder (inside Results/).")
     subparser_train.add_argument("--model_path", type=str,
                                  default="Models/lstm_model.h5",
                                  help="Path to save the trained model. Default: Models/lstm_model.h5.")
@@ -137,6 +139,66 @@ def main() -> None:
                                    default="Models/lstm_model.h5",
                                    help="Path to the trained LSTM model. Default: Models/lstm_model.h5.")
     subparser_predict.set_defaults(func=module_LSTM.predict_clip)
+
+    # ---------------------------------------------------
+    # TRAIN GRU
+    # ---------------------------------------------------
+    subparser_train_gru = subparsers.add_parser(
+        "trainGRU",
+        help="Train the Bidirectional GRU model on coordinate data.",
+        epilog='Example: python main.py trainGRU --directory "../Coordinates" --model_path "Models/gru_model.h5"'
+    )
+    subparser_train_gru.add_argument("--directory", type=str, required=True,
+                                      help="Path to directory containing JSON coordinate files.")
+    subparser_train_gru.add_argument("--model_path", type=str,
+                                      default="Models/gru_model.h5",
+                                      help="Path to save the trained model. Default: Models/gru_model.h5.")
+    subparser_train_gru.set_defaults(func=module_GRU.train_model)
+
+    # ---------------------------------------------------
+    # PREDICT GRU
+    # ---------------------------------------------------
+    subparser_predict_gru = subparsers.add_parser(
+        "predictGRU",
+        help="Predict the quality grade of a single clip using a trained GRU model.",
+        epilog='Example: python main.py predictGRU --file "../Samples/coordinateSamples/player3_part1_clip1_grade2.json"'
+    )
+    subparser_predict_gru.add_argument("--file", type=str, required=True,
+                                        help="Path to a JSON coordinate file.")
+    subparser_predict_gru.add_argument("--model_path", type=str,
+                                        default="Models/gru_model.h5",
+                                        help="Path to the trained GRU model. Default: Models/gru_model.h5.")
+    subparser_predict_gru.set_defaults(func=module_GRU.predict_clip)
+
+    # ---------------------------------------------------
+    # TRAIN TCN
+    # ---------------------------------------------------
+    subparser_train_tcn = subparsers.add_parser(
+        "trainTCN",
+        help="Train the TCN (Temporal Convolutional Network) model on coordinate data.",
+        epilog='Example: python main.py trainTCN --directory "../Coordinates" --model_path "Models/tcn_model.h5"'
+    )
+    subparser_train_tcn.add_argument("--directory", type=str, required=True,
+                                      help="Path to directory containing JSON coordinate files.")
+    subparser_train_tcn.add_argument("--model_path", type=str,
+                                      default="Models/tcn_model.h5",
+                                      help="Path to save the trained model. Default: Models/tcn_model.h5.")
+    subparser_train_tcn.set_defaults(func=module_TCN.train_model)
+
+    # ---------------------------------------------------
+    # PREDICT TCN
+    # ---------------------------------------------------
+    subparser_predict_tcn = subparsers.add_parser(
+        "predictTCN",
+        help="Predict the quality grade of a single clip using a trained TCN model.",
+        epilog='Example: python main.py predictTCN --file "../Samples/coordinateSamples/player3_part1_clip1_grade2.json"'
+    )
+    subparser_predict_tcn.add_argument("--file", type=str, required=True,
+                                        help="Path to a JSON coordinate file.")
+    subparser_predict_tcn.add_argument("--model_path", type=str,
+                                        default="Models/tcn_model.h5",
+                                        help="Path to the trained TCN model. Default: Models/tcn_model.h5.")
+    subparser_predict_tcn.set_defaults(func=module_TCN.predict_clip)
 
     # ---------------------------------------------------
     # COUNT GRADES
