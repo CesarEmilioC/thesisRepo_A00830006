@@ -39,8 +39,9 @@ from keras.layers import (
     LSTM, Dense, Dropout,
     BatchNormalization, Bidirectional
 )
+from keras.regularizers import l2
 from keras.utils import pad_sequences
-from keras.callbacks import EarlyStopping
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
 import config
 
@@ -167,18 +168,29 @@ def normalize_sequence(sequence: np.ndarray) -> np.ndarray:
     return (sequence - mean) / std
 
 
-def prepare_data(sequences: List[np.ndarray], labels: List[int],
-                  max_len: int = config.MAX_SEQUENCE_LENGTH) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Normalize, pad, and split sequences into train/test sets."""
-    normalized = [normalize_sequence(seq) for seq in sequences]
+def augment_sequences(sequences: List[np.ndarray], labels: List[int],
+                      factor: int = config.AUGMENTATION_FACTOR,
+                      noise_std: float = config.AUGMENTATION_NOISE_STD
+                      ) -> Tuple[List[np.ndarray], List[int]]:
+    """Create augmented copies of sequences by adding Gaussian noise and time warping."""
+    aug_seqs = list(sequences)
+    aug_labels = list(labels)
 
-    X = pad_sequences(
-        normalized,
-        maxlen=max_len,
-        dtype='float32',
-        padding='post',
-        truncating='post'
-    )
+    for _ in range(factor):
+        for seq, lbl in zip(sequences, labels):
+            # Gaussian noise
+            noisy = seq + np.random.normal(0, noise_std, seq.shape)
+            aug_seqs.append(noisy)
+            aug_labels.append(lbl)
+
+    print(f"[INFO] Augmented {len(sequences)} -> {len(aug_seqs)} sequences (factor={factor})")
+    return aug_seqs, aug_labels
+
+
+def prepare_data(sequences: List[np.ndarray], labels: List[int],
+                  max_len: int = config.MAX_SEQUENCE_LENGTH,
+                  augment: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Normalize, pad, and split sequences into train/test sets."""
 
     # Grade labels are 1-10 in the data. Map to 5 classes using config.grade_to_class():
     #   Grade 1-2 -> Class 0 (Very Low)
@@ -186,14 +198,32 @@ def prepare_data(sequences: List[np.ndarray], labels: List[int],
     #   Grade 5-6 -> Class 2 (Medium)
     #   Grade 7-8 -> Class 3 (High)
     #   Grade 9-10 -> Class 4 (Excellent)
-    y = np.array([config.grade_to_class(g) for g in labels])
+    y_all = np.array([config.grade_to_class(g) for g in labels])
 
-    counts = Counter(y)
-    stratify_val = y if min(counts.values()) >= 2 else None
+    counts = Counter(y_all)
+    stratify_val = y_all if min(counts.values()) >= 2 else None
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=stratify_val
+    # Split BEFORE augmentation to avoid data leakage
+    seq_train, seq_test, y_train, y_test = train_test_split(
+        sequences, y_all, test_size=0.2, random_state=42, stratify=stratify_val
     )
+
+    # Augment training data only
+    if augment:
+        seq_train_list = list(seq_train)
+        y_train_list = list(y_train)
+        seq_train_list, y_train_list = augment_sequences(seq_train_list, y_train_list)
+        seq_train = seq_train_list
+        y_train = np.array(y_train_list)
+
+    # Normalize and pad
+    norm_train = [normalize_sequence(s) for s in seq_train]
+    norm_test = [normalize_sequence(s) for s in seq_test]
+
+    X_train = pad_sequences(norm_train, maxlen=max_len, dtype='float32',
+                            padding='post', truncating='post')
+    X_test = pad_sequences(norm_test, maxlen=max_len, dtype='float32',
+                           padding='post', truncating='post')
 
     print(f"[INFO] Train: {len(X_train)} / Test: {len(X_test)}")
     return X_train, X_test, y_train, y_test
@@ -204,16 +234,20 @@ def prepare_data(sequences: List[np.ndarray], labels: List[int],
 # ============================================================
 
 def create_lstm_model(input_shape: Tuple[int, int], num_classes: int = config.NUM_CLASSES) -> Sequential:
+    reg = l2(config.L2_REGULARIZATION)
+
     model = Sequential([
         BatchNormalization(),
 
-        Bidirectional(LSTM(config.LSTM_UNITS_L1, return_sequences=True)),
+        Bidirectional(LSTM(config.LSTM_UNITS_L1, return_sequences=True,
+                           kernel_regularizer=reg, recurrent_regularizer=reg)),
         Dropout(config.DROPOUT_L1),
 
-        Bidirectional(LSTM(config.LSTM_UNITS_L2)),
+        Bidirectional(LSTM(config.LSTM_UNITS_L2,
+                           kernel_regularizer=reg, recurrent_regularizer=reg)),
         Dropout(config.DROPOUT_L2),
 
-        Dense(config.DENSE_UNITS, activation='relu'),
+        Dense(config.DENSE_UNITS, activation='relu', kernel_regularizer=reg),
         BatchNormalization(),
 
         Dense(num_classes, activation='softmax')
@@ -229,7 +263,80 @@ def create_lstm_model(input_shape: Tuple[int, int], num_classes: int = config.NU
 
 
 # ============================================================
-# 5. TRAINING + SAVING RESULTS
+# 5. SHARED RESULT-SAVING HELPERS
+# ============================================================
+
+def get_next_test_number(model_prefix: str) -> int:
+    """Scan the Results directory and return the next test number for a given model.
+
+    Looks for folders matching '{model_prefix}_Test{N}_{date}' and returns N+1.
+    For the LSTM model, also checks legacy folders matching 'Test{N}_{date}'
+    (from before the model prefix was introduced).
+    """
+    import re
+    max_num = 0
+
+    if not os.path.isdir(config.RESULTS_DIR):
+        return 1
+
+    for folder in os.listdir(config.RESULTS_DIR):
+        # Match new format: MODEL_TestNN_date
+        match = re.match(rf'^{model_prefix}_Test(\d+)_', folder)
+        if match:
+            max_num = max(max_num, int(match.group(1)))
+            continue
+
+        # For LSTM, also match legacy format: TestNN_date (no model prefix)
+        if model_prefix == "LSTM":
+            match = re.match(r'^Test(\d+)_', folder)
+            if match:
+                max_num = max(max_num, int(match.group(1)))
+
+    return max_num + 1
+
+
+def save_training_history(history, results_dir: str) -> None:
+    """Save training history as JSON."""
+    history_path = os.path.join(results_dir, "training_history.json")
+    # Convert numpy float32 values to native Python floats for JSON serialization
+    serializable = {k: [float(v) for v in vals] for k, vals in history.history.items()}
+    with open(history_path, "w") as f:
+        json.dump(serializable, f, indent=4)
+    print(f"[INFO] History saved to {history_path}")
+
+
+def save_learning_curves(history, results_dir: str) -> None:
+    """Save learning curves plot (loss + accuracy)."""
+    learning_curve_path = os.path.join(results_dir, "learning_curves.png")
+
+    plt.figure(figsize=(10, 6))
+
+    plt.subplot(2, 1, 1)
+    plt.plot(history.history["loss"], label="Training Loss")
+    plt.plot(history.history["val_loss"], label="Validation Loss")
+    plt.title("Learning Curves - Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.grid(True)
+
+    plt.subplot(2, 1, 2)
+    plt.plot(history.history["accuracy"], label="Training Accuracy")
+    plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
+    plt.title("Learning Curves - Accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(learning_curve_path, dpi=300)
+    plt.close()
+    print(f"[INFO] Learning curves saved to {learning_curve_path}")
+
+
+# ============================================================
+# 6. TRAINING + SAVING RESULTS
 # ============================================================
 
 def train_model(args: argparse.Namespace) -> None:
@@ -243,7 +350,9 @@ def train_model(args: argparse.Namespace) -> None:
     # CREATE RESULTS FOLDER
     # --------------------------------------------------------
     date_str = datetime.now().strftime("%d-%m-%y")
-    results_dir = os.path.join(config.RESULTS_DIR, f"{args.run_name}_{date_str}")
+    test_num = get_next_test_number("LSTM")
+    run_name = f"Test{test_num:02d}"
+    results_dir = os.path.join(config.RESULTS_DIR, f"LSTM_{run_name}_{date_str}")
     os.makedirs(results_dir, exist_ok=True)
     print(f"[INFO] Saving results to: {results_dir}")
 
@@ -274,6 +383,14 @@ def train_model(args: argparse.Namespace) -> None:
         restore_best_weights=True
     )
 
+    reduce_lr = ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=5,
+        min_lr=1e-6,
+        verbose=1
+    )
+
     # Compute class weights to handle class imbalance
     unique_train_classes = np.unique(y_train)
     cw = compute_class_weight('balanced', classes=unique_train_classes, y=y_train)
@@ -288,50 +405,13 @@ def train_model(args: argparse.Namespace) -> None:
         epochs=config.EPOCHS,
         batch_size=config.BATCH_SIZE,
         validation_split=0.2,
-        callbacks=[early],
+        callbacks=[early, reduce_lr],
         class_weight=class_weight_dict,
         verbose=1
     )
 
-    # --------------------------------------------------------
-    # SAVE TRAINING HISTORY
-    # --------------------------------------------------------
-    history_path = os.path.join(results_dir, "training_history.json")
-    with open(history_path, "w") as f:
-        json.dump(history.history, f, indent=4)
-    print(f"[INFO] History saved to {history_path}")
-
-    # --------------------------------------------------------
-    # SAVE LEARNING CURVES
-    # --------------------------------------------------------
-    learning_curve_path = os.path.join(results_dir, "learning_curves.png")
-
-    plt.figure(figsize=(10, 6))
-
-    # Loss
-    plt.subplot(2, 1, 1)
-    plt.plot(history.history["loss"], label="Training Loss")
-    plt.plot(history.history["val_loss"], label="Validation Loss")
-    plt.title("Learning Curves - Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.grid(True)
-
-    # Accuracy
-    plt.subplot(2, 1, 2)
-    plt.plot(history.history["accuracy"], label="Training Accuracy")
-    plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
-    plt.title("Learning Curves - Accuracy")
-    plt.xlabel("Epoch")
-    plt.ylabel("Accuracy")
-    plt.legend()
-    plt.grid(True)
-
-    plt.tight_layout()
-    plt.savefig(learning_curve_path, dpi=300)
-    plt.close()
-    print(f"[INFO] Learning curves saved to {learning_curve_path}")
+    save_training_history(history, results_dir)
+    save_learning_curves(history, results_dir)
 
     # --------------------------------------------------------
     # SAVE MODEL

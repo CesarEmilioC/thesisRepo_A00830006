@@ -71,24 +71,57 @@ DEFAULT_RESIZE = "0x0"
 DEFAULT_RESIZE_OUT_RATIO = 4.0
 
 # ============================================================
-# LSTM HYPERPARAMETERS
+# SHARED HYPERPARAMETERS
 # ============================================================
-# Bidirectional LSTM architecture:
-#   Input -> BatchNorm -> BiLSTM(128) -> Dropout(0.30)
-#         -> BiLSTM(64) -> Dropout(0.25) -> Dense(64) -> BatchNorm
-#         -> Dense(NUM_CLASSES, softmax)
-LSTM_UNITS_L1 = 128           # Units in first Bidirectional LSTM layer
-LSTM_UNITS_L2 = 64            # Units in second Bidirectional LSTM layer
-DROPOUT_L1 = 0.30             # Dropout rate after first LSTM layer
-DROPOUT_L2 = 0.25             # Dropout rate after second LSTM layer
-DENSE_UNITS = 64              # Units in the hidden Dense layer
 NUM_CLASSES = 5               # Number of output classes (5-class grouping)
 NUM_FEATURES = 8              # Features per frame: pelvis(2) + shoulder(2) + elbow(2) + wrist(2)
 MAX_SEQUENCE_LENGTH = 90      # Maximum frames per clip (pad/truncate to this)
-EPOCHS = 80                   # Maximum training epochs
+EPOCHS = 100                  # Maximum training epochs
 BATCH_SIZE = 16               # Training batch size
-EARLY_STOPPING_PATIENCE = 12  # Epochs to wait before early stopping
+EARLY_STOPPING_PATIENCE = 15  # Epochs to wait before early stopping
 NORMALIZATION_EPSILON = 1e-8  # Small value to avoid division by zero in normalization
+L2_REGULARIZATION = 1e-4      # L2 weight penalty to reduce overfitting
+AUGMENTATION_NOISE_STD = 0.02 # Gaussian noise std for data augmentation
+AUGMENTATION_FACTOR = 2       # Number of augmented copies per original sample
+
+# ============================================================
+# LSTM HYPERPARAMETERS
+# ============================================================
+# Bidirectional LSTM architecture (reduced to fight overfitting):
+#   Input -> BatchNorm -> BiLSTM(64) -> Dropout(0.40)
+#         -> BiLSTM(32) -> Dropout(0.35) -> Dense(32) -> BatchNorm
+#         -> Dense(NUM_CLASSES, softmax)
+LSTM_UNITS_L1 = 64            # Units in first Bidirectional LSTM layer
+LSTM_UNITS_L2 = 32            # Units in second Bidirectional LSTM layer
+DROPOUT_L1 = 0.40             # Dropout rate after first LSTM layer
+DROPOUT_L2 = 0.35             # Dropout rate after second LSTM layer
+DENSE_UNITS = 32              # Units in the hidden Dense layer
+
+# ============================================================
+# GRU HYPERPARAMETERS
+# ============================================================
+# Bidirectional GRU architecture:
+#   Input -> BatchNorm -> BiGRU(64) -> Dropout(0.40)
+#         -> BiGRU(32) -> Dropout(0.35) -> Dense(32) -> BatchNorm
+#         -> Dense(NUM_CLASSES, softmax)
+GRU_UNITS_L1 = 64
+GRU_UNITS_L2 = 32
+GRU_DROPOUT_L1 = 0.40
+GRU_DROPOUT_L2 = 0.35
+GRU_DENSE_UNITS = 32
+
+# ============================================================
+# TCN HYPERPARAMETERS
+# ============================================================
+# Temporal Convolutional Network:
+#   Input -> BatchNorm -> Conv1D(64,3,dilation=1) -> Conv1D(64,3,dilation=2)
+#         -> Conv1D(64,3,dilation=4) -> GlobalAvgPool -> Dropout(0.40)
+#         -> Dense(32) -> Dense(NUM_CLASSES, softmax)
+TCN_FILTERS = 64              # Number of filters per convolutional layer
+TCN_KERNEL_SIZE = 3           # Kernel size for 1D convolutions
+TCN_DILATIONS = [1, 2, 4]     # Dilation rates for the convolutional layers
+TCN_DROPOUT = 0.40
+TCN_DENSE_UNITS = 32
 
 # ============================================================
 # GRADE-TO-CLASS MAPPING (5-class grouping)
