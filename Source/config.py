@@ -26,8 +26,22 @@ RESULTS_DIR = os.path.join(ROOT_DIR, 'Source', 'Results')
 # Directory where trained models are stored
 MODELS_DIR = os.path.join(ROOT_DIR, 'Source', 'Models')
 
-# Default path for the LSTM model file
-DEFAULT_MODEL_PATH = os.path.join(MODELS_DIR, 'lstm_model.h5')
+def get_latest_model(prefix: str) -> str:
+    """Find the most recent model file matching the given prefix (e.g. 'lstmModel', 'gruModel', 'tcnModel').
+    Returns the full path, or None if no model found."""
+    import re
+    if not os.path.isdir(MODELS_DIR):
+        return None
+    candidates = []
+    for f in os.listdir(MODELS_DIR):
+        if f.startswith(prefix) and f.endswith('.h5'):
+            match = re.search(r'Test(\d+)', f)
+            if match:
+                candidates.append((int(match.group(1)), f))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return os.path.join(MODELS_DIR, candidates[0][1])
 
 # ============================================================
 # OPENPOSE KEYPOINT INDICES (Body-25 Model)

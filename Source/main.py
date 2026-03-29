@@ -116,13 +116,10 @@ def main() -> None:
     subparser_train = subparsers.add_parser(
         "trainLSTM",
         help="Train the Bidirectional LSTM model on coordinate data.",
-        epilog='Example: python main.py trainLSTM --directory "../Coordinates" --model_path "Models/lstm_model.h5"'
+        epilog='Example: python main.py trainLSTM --directory "../Coordinates"'
     )
     subparser_train.add_argument("--directory", type=str, required=True,
                                  help="Path to directory containing JSON coordinate files.")
-    subparser_train.add_argument("--model_path", type=str,
-                                 default="Models/lstm_model.h5",
-                                 help="Path to save the trained model. Default: Models/lstm_model.h5.")
     subparser_train.set_defaults(func=module_LSTM.train_model)
 
     # ---------------------------------------------------
@@ -136,8 +133,8 @@ def main() -> None:
     subparser_predict.add_argument("--file", type=str, required=True,
                                    help="Path to a JSON coordinate file.")
     subparser_predict.add_argument("--model_path", type=str,
-                                   default="Models/lstm_model.h5",
-                                   help="Path to the trained LSTM model. Default: Models/lstm_model.h5.")
+                                   default=None,
+                                   help="Path to the trained LSTM model. Default: latest lstmModel in Models/.")
     subparser_predict.set_defaults(func=module_LSTM.predict_clip)
 
     # ---------------------------------------------------
@@ -150,9 +147,6 @@ def main() -> None:
     )
     subparser_train_gru.add_argument("--directory", type=str, required=True,
                                       help="Path to directory containing JSON coordinate files.")
-    subparser_train_gru.add_argument("--model_path", type=str,
-                                      default="Models/gru_model.h5",
-                                      help="Path to save the trained model. Default: Models/gru_model.h5.")
     subparser_train_gru.set_defaults(func=module_GRU.train_model)
 
     # ---------------------------------------------------
@@ -166,8 +160,8 @@ def main() -> None:
     subparser_predict_gru.add_argument("--file", type=str, required=True,
                                         help="Path to a JSON coordinate file.")
     subparser_predict_gru.add_argument("--model_path", type=str,
-                                        default="Models/gru_model.h5",
-                                        help="Path to the trained GRU model. Default: Models/gru_model.h5.")
+                                        default=None,
+                                        help="Path to the trained GRU model. Default: latest gruModel in Models/.")
     subparser_predict_gru.set_defaults(func=module_GRU.predict_clip)
 
     # ---------------------------------------------------
@@ -180,9 +174,6 @@ def main() -> None:
     )
     subparser_train_tcn.add_argument("--directory", type=str, required=True,
                                       help="Path to directory containing JSON coordinate files.")
-    subparser_train_tcn.add_argument("--model_path", type=str,
-                                      default="Models/tcn_model.h5",
-                                      help="Path to save the trained model. Default: Models/tcn_model.h5.")
     subparser_train_tcn.set_defaults(func=module_TCN.train_model)
 
     # ---------------------------------------------------
@@ -196,8 +187,8 @@ def main() -> None:
     subparser_predict_tcn.add_argument("--file", type=str, required=True,
                                         help="Path to a JSON coordinate file.")
     subparser_predict_tcn.add_argument("--model_path", type=str,
-                                        default="Models/tcn_model.h5",
-                                        help="Path to the trained TCN model. Default: Models/tcn_model.h5.")
+                                        default=None,
+                                        help="Path to the trained TCN model. Default: latest tcnModel in Models/.")
     subparser_predict_tcn.set_defaults(func=module_TCN.predict_clip)
 
     # ---------------------------------------------------

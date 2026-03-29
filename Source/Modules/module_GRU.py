@@ -88,6 +88,7 @@ def train_model(args):
         return
 
     date_str = datetime.now().strftime("%d-%m-%y")
+    date_str_full = datetime.now().strftime("%d-%m-%Y")
     test_num = get_next_test_number("GRU")
     run_name = f"Test{test_num:02d}"
     results_dir = os.path.join(config.RESULTS_DIR, f"GRU_{run_name}_{date_str}")
@@ -126,11 +127,13 @@ def train_model(args):
     save_training_history(history, results_dir)
     save_learning_curves(history, results_dir)
 
-    os.makedirs(os.path.dirname(args.model_path), exist_ok=True)
-    model.save(args.model_path)
-    print(f"[INFO] Model saved to {args.model_path}")
+    model_filename = f"gruModel_{run_name}_{date_str_full}.h5"
+    model_path = os.path.join(config.MODELS_DIR, model_filename)
+    os.makedirs(config.MODELS_DIR, exist_ok=True)
+    model.save(model_path)
+    print(f"[INFO] Model saved to {model_path}")
 
-    results_model_path = os.path.join(results_dir, "gru_model.h5")
+    results_model_path = os.path.join(results_dir, model_filename)
     model.save(results_model_path)
 
     evaluate_model(model, X_test, y_test, results_dir)
@@ -144,11 +147,14 @@ def predict_clip(args):
     if not os.path.isfile(args.file):
         print(f"[ERROR] JSON file not found: {args.file}")
         return -1
-    if not os.path.isfile(args.model_path):
-        print(f"[ERROR] Model file not found: {args.model_path}")
+
+    model_path = args.model_path if args.model_path else config.get_latest_model("gruModel")
+    if not model_path or not os.path.isfile(model_path):
+        print(f"[ERROR] Model file not found. Train a model first or specify --model_path.")
         return -1
 
-    model = load_model(args.model_path)
+    model = load_model(model_path)
+    print(f"[INFO] Model loaded from {model_path}")
 
     from keras.utils import pad_sequences
     import json

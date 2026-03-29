@@ -350,6 +350,7 @@ def train_model(args: argparse.Namespace) -> None:
     # CREATE RESULTS FOLDER
     # --------------------------------------------------------
     date_str = datetime.now().strftime("%d-%m-%y")
+    date_str_full = datetime.now().strftime("%d-%m-%Y")
     test_num = get_next_test_number("LSTM")
     run_name = f"Test{test_num:02d}"
     results_dir = os.path.join(config.RESULTS_DIR, f"LSTM_{run_name}_{date_str}")
@@ -416,12 +417,14 @@ def train_model(args: argparse.Namespace) -> None:
     # --------------------------------------------------------
     # SAVE MODEL
     # --------------------------------------------------------
-    os.makedirs(os.path.dirname(args.model_path), exist_ok=True)
-    model.save(args.model_path)
-    print(f"[INFO] Model saved to {args.model_path}")
+    model_filename = f"lstmModel_{run_name}_{date_str_full}.h5"
+    model_path = os.path.join(config.MODELS_DIR, model_filename)
+    os.makedirs(config.MODELS_DIR, exist_ok=True)
+    model.save(model_path)
+    print(f"[INFO] Model saved to {model_path}")
 
     # Also save a copy of the model in the results directory for reproducibility
-    results_model_path = os.path.join(results_dir, "lstm_model.h5")
+    results_model_path = os.path.join(results_dir, model_filename)
     model.save(results_model_path)
     print(f"[INFO] Model copy saved to {results_model_path}")
 
@@ -537,12 +540,14 @@ def predict_clip(args: argparse.Namespace) -> int:
     if not os.path.isfile(args.file):
         print(f"[ERROR] JSON file not found: {args.file}")
         return -1
-    if not os.path.isfile(args.model_path):
-        print(f"[ERROR] Model file not found: {args.model_path}")
+
+    model_path = args.model_path if args.model_path else config.get_latest_model("lstmModel")
+    if not model_path or not os.path.isfile(model_path):
+        print(f"[ERROR] Model file not found. Train a model first or specify --model_path.")
         return -1
 
-    model = load_model(args.model_path)
-    print(f"[INFO] Model loaded from {args.model_path}")
+    model = load_model(model_path)
+    print(f"[INFO] Model loaded from {model_path}")
 
     with open(args.file, "r") as f:
         data = json.load(f)
