@@ -426,27 +426,28 @@ The following table compares the performance of all three models trained on the 
 
 You can test the trained LSTM model directly from your browser using the Google Colab notebook, without any local installation required.
 
-**Demo folder:** [Google Drive - thesisRepo_A00830006_Demo](https://drive.google.com/drive/folders/1LStXaGp1fYJ3CNZ6U2wq2PhOjvOiygL_?usp=sharing)
+The notebook and sample files are available in the [`Demo/`](Demo/) folder of this repository and in the [Google Drive folder](https://drive.google.com/drive/folders/1LStXaGp1fYJ3CNZ6U2wq2PhOjvOiygL_?usp=sharing).
 
-This folder contains:
+Contents:
 - `LSTM_Prediction_Demo.ipynb` -- The Colab notebook with step-by-step instructions
-- `lstmModel_Test03_23-03-2026.h5` -- The trained LSTM model
 - `player10_part1_clip22_grade9.mp4` -- A sample video clip
 - `player10_part1_clip22_grade9.json` -- The corresponding coordinate file
 
+The trained model is downloaded automatically from this repository when running the notebook (no Google Drive setup needed).
+
 ### How to use it
 
-1. Open the [Google Drive folder](https://drive.google.com/drive/folders/1LStXaGp1fYJ3CNZ6U2wq2PhOjvOiygL_?usp=sharing) and **add a shortcut to your Drive** (right-click → "Add shortcut to Drive")
-2. Open the notebook `LSTM_Prediction_Demo.ipynb` in Google Colab
-3. Follow the steps in the notebook:
-   - **Option A:** Run a prediction on the sample JSON (downloaded automatically from this repository)
-   - **Option B:** Upload your own JSON coordinate file
+1. Open `Demo/LSTM_Prediction_Demo.ipynb` in [Google Colab](https://colab.research.google.com/) (File → Upload notebook, or open directly from GitHub)
+2. Run all cells in order. The notebook will:
+   - Download the trained LSTM model from this repository
+   - Run a prediction on a sample JSON file
+3. To test with your own data:
+   - **Option A:** Run the sample prediction (automatically downloads a JSON from this repo)
+   - **Option B:** Upload your own JSON coordinate file using the upload cell
 
 ### Don't have a JSON file?
 
 If you only have a video clip, you need to extract coordinates first using the pose estimation pipeline. Clone this repository and follow the [Pose Estimation instructions](#1-pose-estimation-with-openpose) to generate the JSON from your video.
-
-The notebook and sample files are also available in the [`Demo/`](Demo/) folder of this repository.
 
 ---
 
