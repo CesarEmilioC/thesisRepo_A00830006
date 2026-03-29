@@ -40,6 +40,11 @@ THESISREPO_A00830006/
 |   |-- player9/
 |   +-- player10/
 |
+|-- Demo/                           # Google Colab demo notebook and sample files
+|   |-- LSTM_Prediction_Demo.ipynb  # Colab notebook for prediction
+|   |-- player10_part1_clip22_grade9.mp4   # Sample clip
+|   +-- player10_part1_clip22_grade9.json  # Sample coordinates
+|
 |-- Samples/                        # Sample data for testing and demonstration
 |   |-- clipSamples/                # Sample video clips (.mp4)
 |   +-- coordinateSamples/          # Sample coordinate files (.json)
@@ -47,10 +52,12 @@ THESISREPO_A00830006/
 |-- Source/
 |   |-- main.py                     # CLI entry point
 |   |-- config.py                   # Central configuration (constants, paths, hyperparameters)
-|   |-- Models/
-|   |   |-- lstm_model.h5           # Trained LSTM model
-|   |   |-- gru_model.h5            # Trained GRU model
-|   |   +-- tcn_model.h5            # Trained TCN model
+|   |-- Models/                     # Trained models (auto-named: {model}Model_TestXX_DD-MM-YYYY.h5)
+|   |   |-- lstmModel_Test01_06-12-2025.h5
+|   |   |-- lstmModel_Test02_02-03-2026.h5
+|   |   |-- lstmModel_Test03_23-03-2026.h5
+|   |   |-- gruModel_Test01_23-03-2026.h5
+|   |   +-- tcnModel_Test01_23-03-2026.h5
 |   |-- Modules/
 |   |   |-- module_poseEstimation.py  # OpenPose pose estimation + interpolation
 |   |   |-- module_LSTM.py            # LSTM model training, evaluation, prediction
@@ -236,14 +243,13 @@ Trains the Bidirectional LSTM network using all player coordinate data.
 
 ```bash
 cd Source
-python main.py trainLSTM --directory "../Coordinates" --model_path "Models/lstm_model.h5"
+python main.py trainLSTM --directory "../Coordinates"
 ```
 
 Arguments:
 - `--directory` (required): Path to directory containing JSON coordinate files.
-- `--model_path`: Path to save the trained model. Default: `Models/lstm_model.h5`.
 
-The test number is auto-detected by scanning existing results folders (e.g., if `LSTM_Test03` exists, the next run creates `LSTM_Test04`).
+The test number and model filename are auto-detected by scanning existing results and model folders. For example, if `LSTM_Test03` exists, the next run creates `LSTM_Test04`, and the model is saved as `lstmModel_Test04_DD-MM-YYYY.h5`.
 
 #### LSTM Training Results
 
@@ -257,8 +263,8 @@ Results/
 |   |-- confusion_matrix.png        # Confusion matrix on the test set
 |   |-- class_distribution.png      # True vs predicted class histogram
 |   |-- classification_report.txt   # Precision, recall, and F1-score summary
-|   +-- lstm_model.h5               # Copy of the trained model for reproducibility
-|-- GRU_Test03_23-03-26/
+|   +-- lstmModel_Test03_23-03-2026.h5  # Copy of the trained model for reproducibility
+|-- GRU_Test01_23-03-26/
 |   +-- (same structure)
 +-- TCN_Test03_23-03-26/
     +-- (same structure)
@@ -302,7 +308,7 @@ Predicts the quality class of a clip using the trained LSTM model.
 
 ```bash
 cd Source
-python main.py predictLSTM --file "../Samples/coordinateSamples/player3_part1_clip1_grade2.json" --model_path "Models/lstm_model.h5"
+python main.py predictLSTM --file "../Samples/coordinateSamples/player3_part1_clip1_grade2.json"
 ```
 
 Output: Predicted class (0-4) with label (e.g., "High") printed to the console.
@@ -315,7 +321,7 @@ Trains the Bidirectional GRU network as a comparative baseline. The GRU simplifi
 
 ```bash
 cd Source
-python main.py trainGRU --directory "../Coordinates" --model_path "Models/gru_model.h5"
+python main.py trainGRU --directory "../Coordinates"
 ```
 
 #### GRU Architecture
@@ -331,7 +337,7 @@ python main.py trainGRU --directory "../Coordinates" --model_path "Models/gru_mo
 
 ```bash
 cd Source
-python main.py predictGRU --file "../Samples/coordinateSamples/player3_part1_clip1_grade2.json" --model_path "Models/gru_model.h5"
+python main.py predictGRU --file "../Samples/coordinateSamples/player3_part1_clip1_grade2.json"
 ```
 
 ---
@@ -342,7 +348,7 @@ Trains a Temporal Convolutional Network (TCN) as a non-recurrent baseline. TCNs 
 
 ```bash
 cd Source
-python main.py trainTCN --directory "../Coordinates" --model_path "Models/tcn_model.h5"
+python main.py trainTCN --directory "../Coordinates"
 ```
 
 #### TCN Architecture
@@ -359,7 +365,7 @@ python main.py trainTCN --directory "../Coordinates" --model_path "Models/tcn_mo
 
 ```bash
 cd Source
-python main.py predictTCN --file "../Samples/coordinateSamples/player3_part1_clip1_grade2.json" --model_path "Models/tcn_model.h5"
+python main.py predictTCN --file "../Samples/coordinateSamples/player3_part1_clip1_grade2.json"
 ```
 
 ---
@@ -413,6 +419,34 @@ The following table compares the performance of all three models trained on the 
 - The **GRU** underperforms both alternatives (26.8%), suggesting that the simplified gating mechanism loses relevant temporal information for this task.
 - All models show significant overfitting (training accuracy >99% vs test ~30%), which is expected given the small dataset size (484 clips). Expanding the dataset is the most impactful path to improved generalization.
 - The **LSTM** remains the primary model for this thesis, supported by its theoretical suitability for capturing long-range dependencies across 90-frame sequences (as detailed in the Theoretical Framework chapter). The TCN and GRU serve as comparative baselines to validate this architectural choice.
+
+---
+
+## Try the Model (Google Colab)
+
+You can test the trained LSTM model directly from your browser using the Google Colab notebook, without any local installation required.
+
+**Demo folder:** [Google Drive - thesisRepo_A00830006_Demo](https://drive.google.com/drive/folders/1LStXaGp1fYJ3CNZ6U2wq2PhOjvOiygL_?usp=sharing)
+
+This folder contains:
+- `LSTM_Prediction_Demo.ipynb` -- The Colab notebook with step-by-step instructions
+- `lstmModel_Test03_23-03-2026.h5` -- The trained LSTM model
+- `player10_part1_clip22_grade9.mp4` -- A sample video clip
+- `player10_part1_clip22_grade9.json` -- The corresponding coordinate file
+
+### How to use it
+
+1. Open the [Google Drive folder](https://drive.google.com/drive/folders/1LStXaGp1fYJ3CNZ6U2wq2PhOjvOiygL_?usp=sharing) and **add a shortcut to your Drive** (right-click → "Add shortcut to Drive")
+2. Open the notebook `LSTM_Prediction_Demo.ipynb` in Google Colab
+3. Follow the steps in the notebook:
+   - **Option A:** Run a prediction on the sample JSON (downloaded automatically from this repository)
+   - **Option B:** Upload your own JSON coordinate file
+
+### Don't have a JSON file?
+
+If you only have a video clip, you need to extract coordinates first using the pose estimation pipeline. Clone this repository and follow the [Pose Estimation instructions](#1-pose-estimation-with-openpose) to generate the JSON from your video.
+
+The notebook and sample files are also available in the [`Demo/`](Demo/) folder of this repository.
 
 ---
 
