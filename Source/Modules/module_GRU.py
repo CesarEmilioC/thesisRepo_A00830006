@@ -34,7 +34,7 @@ from keras.regularizers import l2
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
 import config
-from Modules.module_LSTM import (
+from Modules.module_data import (
     load_all_jsons,
     prepare_data,
     evaluate_model,

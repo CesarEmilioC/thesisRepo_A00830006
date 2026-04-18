@@ -10,6 +10,8 @@ Author: Cesar Emilio Castano Marin
 """
 
 import os
+import shutil
+import re
 
 # ============================================================
 # PATH CONFIGURATION
@@ -165,3 +167,77 @@ COLORMAP_RANGE_START = 0.3       # Start of colormap range (lighter = movement s
 # Expected filename format: player{N}_part{M}_clip{K}_grade{G}
 # Example: player10_part1_clip3_grade8
 FILENAME_REGEX = r'player(\d+)_part(\d+)_clip(\d+)_grade(\d+)'
+
+# ============================================================
+# THESIS ARTIFACT GENERATION
+# ============================================================
+# TF's C++ file I/O cannot handle non-ASCII characters in paths (e.g. 'í'
+# in 'Maestría').  Models are copied to an ASCII-safe temp dir before loading.
+TEMP_MODELS_DIR = os.path.join(os.environ.get('TEMP', 'C:/Temp'), 'thesis_models_tmp')
+
+PLOT_DPI = 300  # DPI for publication-ready figures
+
+# Experiment registry — one entry per training run.
+EXPERIMENTS = [
+    {
+        'key':            'LSTM_Test01',
+        'display_name':   'LSTM \u2014 Experiment 1 (Baseline)',
+        'results_folder': 'LSTM_Test01_06-12-25',
+        'model_path':     os.path.join(RESULTS_DIR, '..', 'Models', 'lstmModel_Test01_06-12-2025.h5'),
+        'thesis_subdir':  'LSTM_Test01',
+    },
+    {
+        'key':            'LSTM_Test02',
+        'display_name':   'LSTM \u2014 Experiment 2',
+        'results_folder': 'LSTM_Test02_02-03-26',
+        'model_path':     os.path.join(RESULTS_DIR, 'LSTM_Test02_02-03-26', 'lstm_model.h5'),
+        'thesis_subdir':  'LSTM_Test02',
+    },
+    {
+        'key':            'LSTM_Test03',
+        'display_name':   'BiLSTM \u2014 Final Model',
+        'results_folder': 'LSTM_Test03_23-03-26',
+        'model_path':     os.path.join(RESULTS_DIR, 'LSTM_Test03_23-03-26', 'lstm_model.h5'),
+        'thesis_subdir':  'LSTM_Test03',
+    },
+    {
+        'key':            'GRU_Test01',
+        'display_name':   'BiGRU \u2014 Final Model',
+        'results_folder': 'GRU_Test01_23-03-26',
+        'model_path':     os.path.join(RESULTS_DIR, 'GRU_Test01_23-03-26', 'gru_model.h5'),
+        'thesis_subdir':  'GRU_Test01',
+    },
+    {
+        'key':            'TCN_Test01',
+        'display_name':   'TCN \u2014 Final Model',
+        'results_folder': 'TCN_Test01_23-03-26',
+        'model_path':     os.path.join(RESULTS_DIR, 'TCN_Test01_23-03-26', 'tcn_model.h5'),
+        'thesis_subdir':  'TCN_Test01',
+    },
+]
+
+FINAL_MODELS = {'LSTM_Test03', 'GRU_Test01', 'TCN_Test01'}
+
+
+def safe_model_path(original_path: str) -> str:
+    """Return a copy of *original_path* under an ASCII-only temp directory.
+
+    This works around TensorFlow's C++ file I/O inability to handle
+    non-ASCII characters (e.g. 'í' in 'Maestría') in file paths.
+    """
+    os.makedirs(TEMP_MODELS_DIR, exist_ok=True)
+    dst = os.path.join(TEMP_MODELS_DIR, os.path.basename(original_path))
+    if not os.path.exists(dst):
+        shutil.copy2(original_path, dst)
+    return dst
+
+
+def get_thesis_dir(args=None) -> str:
+    """Resolve the thesis document folder from CLI args or the default path.
+
+    Default: ../FinalThesis_CesarCastano_A00830006/ relative to repo root.
+    """
+    if args and hasattr(args, 'thesis_dir') and args.thesis_dir:
+        return os.path.abspath(args.thesis_dir)
+    return os.path.abspath(
+        os.path.join(ROOT_DIR, '..', 'FinalThesis_CesarCastano_A00830006'))

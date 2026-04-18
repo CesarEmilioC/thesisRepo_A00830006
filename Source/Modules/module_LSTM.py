@@ -4,6 +4,10 @@ Module: module_LSTM.py
 Author: Cesar Emilio Castaño Marin
 Project: Thesis - Smash Vision / LSTM for Paddle Tennis Analysis
 -------------------------------------------------------------
+Bidirectional LSTM model definition, training, and single-clip prediction.
+
+All shared helpers (data loading, preprocessing, evaluation) live in
+module_data.py and are imported here for training and inference.
 """
 
 # ============================================================
@@ -11,24 +15,11 @@ Project: Thesis - Smash Vision / LSTM for Paddle Tennis Analysis
 # ============================================================
 
 import os
-import json
 import argparse
 import numpy as np
-from typing import List, Tuple, Optional
-from tqdm import tqdm
-from collections import Counter
 from datetime import datetime
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import (
-    classification_report,
-    confusion_matrix,
-    accuracy_score
-)
 from sklearn.utils.class_weight import compute_class_weight
-
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 import tensorflow as tf
 tf.autograph.set_verbosity(0)
@@ -44,196 +35,23 @@ from keras.utils import pad_sequences
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
 import config
+from Modules.module_data import (
+    load_all_jsons,
+    prepare_data,
+    evaluate_model,
+    normalize_sequence,
+    save_training_history,
+    save_learning_curves,
+    get_next_test_number
+)
 
 
 # ============================================================
-# 1. JSON FILE LOADING
+# LSTM MODEL
 # ============================================================
 
-def load_all_jsons(base_dir: str) -> Tuple[List[np.ndarray], List[int]]:
-    """Load all JSON coordinate files recursively from base_dir.
-
-    Returns a tuple of (sequences, labels) where each sequence is a numpy
-    array of shape (num_frames, 8) containing pelvis + shoulder + elbow + wrist
-    relative coordinates (2D each = 8 features), and each label is the grade (1-10).
-
-    If a JSON does not contain the shoulder field (older 3-keypoint format),
-    it is still loaded with 6 features for backward compatibility, but a
-    warning is printed.
-    """
-    sequences = []
-    labels = []
-
-    for root, _, files in os.walk(base_dir):
-        for file in files:
-            if file.endswith(".json"):
-                path = os.path.join(root, file)
-
-                with open(path, "r") as f:
-                    data = json.load(f)
-
-                meta = data.get("metadata", {})
-                grade = int(meta.get("grade", 0))
-
-                pelvis   = np.array(data.get(config.FIELD_PELVIS, []))
-                shoulder = np.array(data.get(config.FIELD_SHOULDER_RELATIVE, []))
-                elbow    = np.array(data.get(config.FIELD_ELBOW_RELATIVE, []))
-                hand     = np.array(data.get(config.FIELD_WRIST_RELATIVE, []))
-
-                has_shoulder = len(shoulder) > 0
-
-                if has_shoulder:
-                    L = min(len(pelvis), len(shoulder), len(elbow), len(hand))
-                else:
-                    L = min(len(pelvis), len(elbow), len(hand))
-
-                if L == 0:
-                    print(f"[WARNING] Skipping empty sequence: {path}")
-                    continue
-
-                if has_shoulder:
-                    seq = np.concatenate(
-                        [pelvis[:L], shoulder[:L], elbow[:L], hand[:L]], axis=1
-                    )
-                else:
-                    print(f"[WARNING] No shoulder data in {file}, loading with 6 features")
-                    seq = np.concatenate(
-                        [pelvis[:L], elbow[:L], hand[:L]], axis=1
-                    )
-
-                sequences.append(seq)
-                labels.append(grade)
-
-    print(f"[INFO] Loaded {len(sequences)} clips from {base_dir}")
-    return sequences, labels
-
-
-# ============================================================
-# 2. GRADE COUNTER
-# ============================================================
-
-def count_grades(args: argparse.Namespace) -> None:
-    _, labels = load_all_jsons(args.directory)
-
-    if not labels:
-        print("[ERROR] No JSONs with grades found.")
-        return
-
-    grade_counter = Counter(labels)
-
-    print("\n============================")
-    print(" GRADE DISTRIBUTION (1-10)")
-    print("============================\n")
-
-    for g in sorted(grade_counter.keys()):
-        print(f"Grade {g}: {grade_counter[g]} clips")
-
-    # Also show 5-class distribution
-    class_labels_list = [config.grade_to_class(g) for g in labels]
-    class_counter = Counter(class_labels_list)
-
-    print("\n============================")
-    print(" CLASS DISTRIBUTION (5 classes)")
-    print("============================\n")
-
-    for c in sorted(class_counter.keys()):
-        print(f"Class {c} ({config.CLASS_LABELS[c]}): {class_counter[c]} clips")
-
-    print(f"\nTotal clips: {len(labels)}")
-    print("============================\n")
-
-
-# ============================================================
-# 3. PREPROCESSING
-# ============================================================
-
-def normalize_sequence(sequence: np.ndarray) -> np.ndarray:
-    """Normalize a single sequence using per-feature zero-mean, unit-variance normalization.
-
-    Each clip is normalized independently (per-clip normalization).
-    The same function is used during both training and inference.
-
-    Parameters
-    ----------
-    sequence : np.ndarray
-        Shape (timesteps, features). Raw coordinate sequence.
-
-    Returns
-    -------
-    np.ndarray
-        Normalized sequence with the same shape.
-    """
-    mean = np.mean(sequence, axis=0)
-    std = np.std(sequence, axis=0) + config.NORMALIZATION_EPSILON
-    return (sequence - mean) / std
-
-
-def augment_sequences(sequences: List[np.ndarray], labels: List[int],
-                      factor: int = config.AUGMENTATION_FACTOR,
-                      noise_std: float = config.AUGMENTATION_NOISE_STD
-                      ) -> Tuple[List[np.ndarray], List[int]]:
-    """Create augmented copies of sequences by adding Gaussian noise and time warping."""
-    aug_seqs = list(sequences)
-    aug_labels = list(labels)
-
-    for _ in range(factor):
-        for seq, lbl in zip(sequences, labels):
-            # Gaussian noise
-            noisy = seq + np.random.normal(0, noise_std, seq.shape)
-            aug_seqs.append(noisy)
-            aug_labels.append(lbl)
-
-    print(f"[INFO] Augmented {len(sequences)} -> {len(aug_seqs)} sequences (factor={factor})")
-    return aug_seqs, aug_labels
-
-
-def prepare_data(sequences: List[np.ndarray], labels: List[int],
-                  max_len: int = config.MAX_SEQUENCE_LENGTH,
-                  augment: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Normalize, pad, and split sequences into train/test sets."""
-
-    # Grade labels are 1-10 in the data. Map to 5 classes using config.grade_to_class():
-    #   Grade 1-2 -> Class 0 (Very Low)
-    #   Grade 3-4 -> Class 1 (Low)
-    #   Grade 5-6 -> Class 2 (Medium)
-    #   Grade 7-8 -> Class 3 (High)
-    #   Grade 9-10 -> Class 4 (Excellent)
-    y_all = np.array([config.grade_to_class(g) for g in labels])
-
-    counts = Counter(y_all)
-    stratify_val = y_all if min(counts.values()) >= 2 else None
-
-    # Split BEFORE augmentation to avoid data leakage
-    seq_train, seq_test, y_train, y_test = train_test_split(
-        sequences, y_all, test_size=0.2, random_state=42, stratify=stratify_val
-    )
-
-    # Augment training data only
-    if augment:
-        seq_train_list = list(seq_train)
-        y_train_list = list(y_train)
-        seq_train_list, y_train_list = augment_sequences(seq_train_list, y_train_list)
-        seq_train = seq_train_list
-        y_train = np.array(y_train_list)
-
-    # Normalize and pad
-    norm_train = [normalize_sequence(s) for s in seq_train]
-    norm_test = [normalize_sequence(s) for s in seq_test]
-
-    X_train = pad_sequences(norm_train, maxlen=max_len, dtype='float32',
-                            padding='post', truncating='post')
-    X_test = pad_sequences(norm_test, maxlen=max_len, dtype='float32',
-                           padding='post', truncating='post')
-
-    print(f"[INFO] Train: {len(X_train)} / Test: {len(X_test)}")
-    return X_train, X_test, y_train, y_test
-
-
-# ============================================================
-# 4. LSTM MODEL
-# ============================================================
-
-def create_lstm_model(input_shape: Tuple[int, int], num_classes: int = config.NUM_CLASSES) -> Sequential:
+def create_lstm_model(input_shape, num_classes=config.NUM_CLASSES):
+    """Build a Bidirectional LSTM with L2 regularization."""
     reg = l2(config.L2_REGULARIZATION)
 
     model = Sequential([
@@ -263,80 +81,7 @@ def create_lstm_model(input_shape: Tuple[int, int], num_classes: int = config.NU
 
 
 # ============================================================
-# 5. SHARED RESULT-SAVING HELPERS
-# ============================================================
-
-def get_next_test_number(model_prefix: str) -> int:
-    """Scan the Results directory and return the next test number for a given model.
-
-    Looks for folders matching '{model_prefix}_Test{N}_{date}' and returns N+1.
-    For the LSTM model, also checks legacy folders matching 'Test{N}_{date}'
-    (from before the model prefix was introduced).
-    """
-    import re
-    max_num = 0
-
-    if not os.path.isdir(config.RESULTS_DIR):
-        return 1
-
-    for folder in os.listdir(config.RESULTS_DIR):
-        # Match new format: MODEL_TestNN_date
-        match = re.match(rf'^{model_prefix}_Test(\d+)_', folder)
-        if match:
-            max_num = max(max_num, int(match.group(1)))
-            continue
-
-        # For LSTM, also match legacy format: TestNN_date (no model prefix)
-        if model_prefix == "LSTM":
-            match = re.match(r'^Test(\d+)_', folder)
-            if match:
-                max_num = max(max_num, int(match.group(1)))
-
-    return max_num + 1
-
-
-def save_training_history(history, results_dir: str) -> None:
-    """Save training history as JSON."""
-    history_path = os.path.join(results_dir, "training_history.json")
-    # Convert numpy float32 values to native Python floats for JSON serialization
-    serializable = {k: [float(v) for v in vals] for k, vals in history.history.items()}
-    with open(history_path, "w") as f:
-        json.dump(serializable, f, indent=4)
-    print(f"[INFO] History saved to {history_path}")
-
-
-def save_learning_curves(history, results_dir: str) -> None:
-    """Save learning curves plot (loss + accuracy)."""
-    learning_curve_path = os.path.join(results_dir, "learning_curves.png")
-
-    plt.figure(figsize=(10, 6))
-
-    plt.subplot(2, 1, 1)
-    plt.plot(history.history["loss"], label="Training Loss")
-    plt.plot(history.history["val_loss"], label="Validation Loss")
-    plt.title("Learning Curves - Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.grid(True)
-
-    plt.subplot(2, 1, 2)
-    plt.plot(history.history["accuracy"], label="Training Accuracy")
-    plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
-    plt.title("Learning Curves - Accuracy")
-    plt.xlabel("Epoch")
-    plt.ylabel("Accuracy")
-    plt.legend()
-    plt.grid(True)
-
-    plt.tight_layout()
-    plt.savefig(learning_curve_path, dpi=300)
-    plt.close()
-    print(f"[INFO] Learning curves saved to {learning_curve_path}")
-
-
-# ============================================================
-# 6. TRAINING + SAVING RESULTS
+# TRAINING
 # ============================================================
 
 def train_model(args: argparse.Namespace) -> None:
@@ -392,7 +137,6 @@ def train_model(args: argparse.Namespace) -> None:
         verbose=1
     )
 
-    # Compute class weights to handle class imbalance
     unique_train_classes = np.unique(y_train)
     cw = compute_class_weight('balanced', classes=unique_train_classes, y=y_train)
     class_weight_dict = {int(c): w for c, w in zip(unique_train_classes, cw)}
@@ -423,7 +167,6 @@ def train_model(args: argparse.Namespace) -> None:
     model.save(model_path)
     print(f"[INFO] Model saved to {model_path}")
 
-    # Also save a copy of the model in the results directory for reproducibility
     results_model_path = os.path.join(results_dir, model_filename)
     model.save(results_model_path)
     print(f"[INFO] Model copy saved to {results_model_path}")
@@ -435,103 +178,7 @@ def train_model(args: argparse.Namespace) -> None:
 
 
 # ============================================================
-# 6. METRICS + PLOTS
-# ============================================================
-
-def plot_class_distribution(y_true: np.ndarray, y_pred: np.ndarray, save_path: Optional[str] = None) -> None:
-    true_counts = Counter(y_true)
-    pred_counts = Counter(y_pred)
-
-    all_classes = sorted(set(list(true_counts.keys()) + list(pred_counts.keys())))
-    real = [true_counts.get(c, 0) for c in all_classes]
-    pred = [pred_counts.get(c, 0) for c in all_classes]
-
-    plt.figure(figsize=(10, 6))
-    x = np.arange(len(all_classes))
-
-    plt.bar(x - 0.2, real, width=0.4, label="True")
-    plt.bar(x + 0.2, pred, width=0.4, label="Predicted")
-
-    tick_labels = [config.CLASS_LABELS[c] if c < len(config.CLASS_LABELS) else str(c) for c in all_classes]
-    plt.xticks(x, tick_labels, rotation=15)
-    plt.title("True vs Predicted Class Distribution")
-    plt.xlabel("Class")
-    plt.ylabel("Clips")
-    plt.legend()
-    plt.tight_layout()
-
-    if save_path:
-        plt.savefig(save_path, dpi=300)
-        plt.close()
-        print(f"[INFO] Distribution plot saved to {save_path}")
-    else:
-        plt.show()
-
-
-def evaluate_model(model: Sequential, X_test: np.ndarray, y_test: np.ndarray,
-                    results_dir: Optional[str] = None) -> None:
-
-    y_pred = np.argmax(model.predict(X_test, verbose=0), axis=1)
-
-    acc = accuracy_score(y_test, y_pred)
-    print(f"\n[RESULT] Accuracy: {acc:.4f}\n")
-
-    valid_labels = sorted(set(y_test))
-    target_names = [config.CLASS_LABELS[c] if c < len(config.CLASS_LABELS) else str(c) for c in valid_labels]
-    report = classification_report(
-        y_test, y_pred, digits=3,
-        zero_division=0, labels=valid_labels,
-        target_names=target_names
-    )
-
-    print("[INFO] Classification Report:\n")
-    print(report)
-
-    if results_dir:
-        report_path = os.path.join(results_dir, "classification_report.txt")
-        with open(report_path, "w") as f:
-            f.write(f"Accuracy: {acc:.4f}\n\n")
-            f.write(report)
-        print(f"[INFO] Report saved to {report_path}")
-
-    # ------------------------------------------
-    # Confusion Matrix
-    # ------------------------------------------
-    cm_data = confusion_matrix(y_test, y_pred, labels=valid_labels)
-
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(
-        cm_data,
-        annot=True,
-        cmap="Blues",
-        xticklabels=target_names,
-        yticklabels=target_names
-    )
-    plt.xlabel("Predicted")
-    plt.ylabel("True")
-    plt.title("Confusion Matrix")
-    plt.tight_layout()
-
-    if results_dir:
-        cm_path = os.path.join(results_dir, "confusion_matrix.png")
-        plt.savefig(cm_path, dpi=300)
-        plt.close()
-        print(f"[INFO] Confusion matrix saved to {cm_path}")
-    else:
-        plt.show()
-
-    # ------------------------------------------
-    # Class Distribution
-    # ------------------------------------------
-    if results_dir:
-        bar_path = os.path.join(results_dir, "class_distribution.png")
-        plot_class_distribution(y_test, y_pred, save_path=bar_path)
-    else:
-        plot_class_distribution(y_test, y_pred)
-
-
-# ============================================================
-# 7. CLIP PREDICTION
+# CLIP PREDICTION
 # ============================================================
 
 def predict_clip(args: argparse.Namespace) -> int:
@@ -550,6 +197,7 @@ def predict_clip(args: argparse.Namespace) -> int:
     print(f"[INFO] Model loaded from {model_path}")
 
     with open(args.file, "r") as f:
+        import json
         data = json.load(f)
 
     pelvis   = np.array(data.get(config.FIELD_PELVIS, []))
@@ -569,7 +217,6 @@ def predict_clip(args: argparse.Namespace) -> int:
 
     sequence = normalize_sequence(sequence)
 
-    # Pad/truncate to match training input shape (MAX_SEQUENCE_LENGTH frames)
     sequence = pad_sequences(
         [sequence],
         maxlen=config.MAX_SEQUENCE_LENGTH,
@@ -577,9 +224,7 @@ def predict_clip(args: argparse.Namespace) -> int:
         padding='post',
         truncating='post'
     )
-    # sequence shape is now (1, MAX_SEQUENCE_LENGTH, features)
 
-    # Get predicted class (0-4)
     pred_class = np.argmax(model.predict(sequence, verbose=0), axis=1)[0]
     class_label = config.CLASS_LABELS[pred_class] if pred_class < len(config.CLASS_LABELS) else str(pred_class)
 

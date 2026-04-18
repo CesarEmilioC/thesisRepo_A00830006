@@ -20,6 +20,11 @@ functionality through subcommands:
     countGrades  Count how many clips exist per grade across the dataset.
     analyzeJSON  Analyze JSON data quality by computing the proportion
                  of valid frames (frames where all joints were detected).
+    regenPlots   Regenerate all 15 experiment plots with display names.
+    labelDist    Generate dataset-wide class distribution histogram.
+    spearman     Compute Spearman rank correlation for the 3 final models.
+    sysOutput    Generate system output comparison figure (low vs high quality).
+    datasetStats Report dataset statistics (clips per player/class/grade).
 
 Usage examples:
     python main.py pose --video "../Samples/clipSamples/player10_part1_clip0_grade7.mp4"
@@ -44,6 +49,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'Modu
 
 import Modules.module_poseEstimation as module_poseEstimation
 import Modules.module_grapher as module_grapher
+import Modules.module_data as module_data
 import Modules.module_LSTM as module_LSTM
 import Modules.module_GRU as module_GRU
 import Modules.module_TCN as module_TCN
@@ -201,7 +207,7 @@ def main() -> None:
     )
     subparser_count.add_argument("--directory", type=str, required=True,
                                  help="Path to directory containing JSON coordinate files.")
-    subparser_count.set_defaults(func=module_LSTM.count_grades)
+    subparser_count.set_defaults(func=module_data.count_grades)
 
     # ---------------------------------------------------
     # ANALYZE JSON
@@ -216,6 +222,76 @@ def main() -> None:
     subparser_analyze.add_argument("--directory", type=str, default="",
                                    help="Path to a directory to analyze recursively.")
     subparser_analyze.set_defaults(func=module_poseEstimation.run_json_analysis)
+
+    # ---------------------------------------------------
+    # REGEN PLOTS
+    # ---------------------------------------------------
+    subparser_regen = subparsers.add_parser(
+        "regenPlots",
+        help="Regenerate all 15 experiment plots with English labels and display names.",
+        epilog='Example: python main.py regenPlots --directory "../Coordinates"'
+    )
+    subparser_regen.add_argument("--directory", type=str, required=True,
+                                 help="Path to directory containing JSON coordinate files.")
+    subparser_regen.add_argument("--thesis_dir", type=str, default=None,
+                                 help="Path to thesis document folder. Default: auto-detected.")
+    subparser_regen.set_defaults(func=module_grapher.regen_plots)
+
+    # ---------------------------------------------------
+    # LABEL DISTRIBUTION
+    # ---------------------------------------------------
+    subparser_ldist = subparsers.add_parser(
+        "labelDist",
+        help="Generate dataset-wide class distribution histogram.",
+        epilog='Example: python main.py labelDist --directory "../Coordinates"'
+    )
+    subparser_ldist.add_argument("--directory", type=str, required=True,
+                                 help="Path to directory containing JSON coordinate files.")
+    subparser_ldist.add_argument("--thesis_dir", type=str, default=None,
+                                 help="Path to thesis document folder. Default: auto-detected.")
+    subparser_ldist.set_defaults(func=module_grapher.label_dist)
+
+    # ---------------------------------------------------
+    # SPEARMAN
+    # ---------------------------------------------------
+    subparser_spear = subparsers.add_parser(
+        "spearman",
+        help="Compute Spearman rank correlation for the 3 final models.",
+        epilog='Example: python main.py spearman --directory "../Coordinates"'
+    )
+    subparser_spear.add_argument("--directory", type=str, required=True,
+                                 help="Path to directory containing JSON coordinate files.")
+    subparser_spear.add_argument("--thesis_dir", type=str, default=None,
+                                 help="Path to thesis document folder. Default: auto-detected.")
+    subparser_spear.set_defaults(func=module_data.compute_spearman)
+
+    # ---------------------------------------------------
+    # SYSTEM OUTPUT FIGURE
+    # ---------------------------------------------------
+    subparser_sysout = subparsers.add_parser(
+        "sysOutput",
+        help="Generate system output comparison figure (low vs high quality clip).",
+        epilog='Example: python main.py sysOutput --directory "../Coordinates"'
+    )
+    subparser_sysout.add_argument("--directory", type=str, required=True,
+                                  help="Path to directory containing JSON coordinate files.")
+    subparser_sysout.add_argument("--thesis_dir", type=str, default=None,
+                                  help="Path to thesis document folder. Default: auto-detected.")
+    subparser_sysout.set_defaults(func=module_grapher.sys_output)
+
+    # ---------------------------------------------------
+    # DATASET STATISTICS
+    # ---------------------------------------------------
+    subparser_dstats = subparsers.add_parser(
+        "datasetStats",
+        help="Report dataset statistics (clips per player, class, and grade).",
+        epilog='Example: python main.py datasetStats --directory "../Coordinates"'
+    )
+    subparser_dstats.add_argument("--directory", type=str, required=True,
+                                  help="Path to directory containing JSON coordinate files.")
+    subparser_dstats.add_argument("--thesis_dir", type=str, default=None,
+                                  help="Path to thesis document folder. Default: auto-detected.")
+    subparser_dstats.set_defaults(func=module_data.dataset_stats)
 
     # ---------------------------------------------------
     args = parser.parse_args()

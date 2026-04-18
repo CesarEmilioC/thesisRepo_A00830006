@@ -17,10 +17,14 @@ import json
 import os
 import argparse
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import matplotlib.animation as animation
+import seaborn as sns
 from typing import Tuple, Optional
+from collections import Counter
+from sklearn.metrics import confusion_matrix, accuracy_score
 
 import config
 
@@ -309,8 +313,8 @@ def plot_coordinates(args: argparse.Namespace) -> None:
     shoulder = coords["shoulder"]
     shoulder_ref = coords["shoulder_ref"]
 
-    print(f"\n[INFO] Archivo cargado: {args.file}")
-    print(f"[INFO] Tipo de grafica seleccionada: {args.type}")
+    print(f"\n[INFO] File loaded: {args.file}")
+    print(f"[INFO] Plot type selected: {args.type}")
     if shoulder is not None:
         print("[INFO] Shoulder data found (4-keypoint format)\n")
     else:
@@ -344,7 +348,7 @@ def animate_motion(args: argparse.Namespace) -> None:
     Connects joints as a kinematic chain: Pelvis -> Shoulder -> Elbow -> Wrist.
     """
     json_path = args.file
-    print(f"\n[INFO] Generando animacion desde: {json_path}\n")
+    print(f"\n[INFO] Generating animation from: {json_path}\n")
 
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -461,3 +465,332 @@ def animate_motion(args: argparse.Namespace) -> None:
 
     plt.tight_layout()
     plt.show()
+
+
+# ============================================================
+#  THESIS ARTIFACT GENERATION
+# ============================================================
+# Private helpers for publication-ready figures.
+
+def _plot_learning_curves(history: dict, display_name: str, out_path: str):
+    """Plot and save learning curves (loss + accuracy) from training history."""
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+
+    ax1.plot(history['loss'],     label='Training Loss')
+    ax1.plot(history['val_loss'], label='Validation Loss')
+    ax1.set_title(f'Learning Curves \u2014 {display_name}')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Loss')
+    ax1.legend()
+    ax1.grid(True)
+
+    ax2.plot(history['accuracy'],     label='Training Accuracy')
+    ax2.plot(history['val_accuracy'], label='Validation Accuracy')
+    ax2.set_title(f'Learning Curves \u2014 {display_name}')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('Accuracy')
+    ax2.legend()
+    ax2.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=config.PLOT_DPI)
+    plt.close()
+
+
+def _plot_confusion_matrix(y_true, y_pred, display_name: str,
+                           class_labels, out_path: str):
+    """Plot and save a confusion matrix heatmap."""
+    valid = sorted(set(list(y_true) + list(y_pred)))
+    names = [class_labels[c] if c < len(class_labels) else str(c) for c in valid]
+    cm_data = confusion_matrix(y_true, y_pred, labels=valid)
+
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm_data, annot=True, fmt='d', cmap='Blues',
+                xticklabels=names, yticklabels=names)
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.title(f'Confusion Matrix \u2014 {display_name}')
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=config.PLOT_DPI)
+    plt.close()
+
+
+def _plot_class_dist_thesis(y_true, y_pred, display_name: str,
+                            class_labels, out_path: str):
+    """Plot and save true vs predicted class distribution bar chart."""
+    true_c = Counter(y_true)
+    pred_c = Counter(y_pred)
+    classes = sorted(set(list(true_c) + list(pred_c)))
+    names = [class_labels[c] if c < len(class_labels) else str(c) for c in classes]
+
+    plt.figure(figsize=(10, 6))
+    x = np.arange(len(classes))
+    plt.bar(x - 0.2, [true_c.get(c, 0) for c in classes], width=0.4, label='True')
+    plt.bar(x + 0.2, [pred_c.get(c, 0) for c in classes], width=0.4, label='Predicted')
+    plt.xticks(x, names, rotation=15)
+    plt.title(f'True vs Predicted Class Distribution \u2014 {display_name}')
+    plt.xlabel('Class')
+    plt.ylabel('Clips')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=config.PLOT_DPI)
+    plt.close()
+
+
+# -----------------------------------------------------------
+# CLI-callable thesis functions
+# -----------------------------------------------------------
+
+def regen_plots(args: argparse.Namespace) -> None:
+    """Regenerate all 15 experiment plots with English labels and display names.
+
+    Reads learning curves from saved training_history.json and regenerates
+    confusion matrix + class distribution by running inference on the test set
+    reconstructed from the same random_state=42 split.
+
+    Output: PNG files copied to the thesis Images/Experimentation/ directory.
+    """
+    from tf_keras.models import load_model as tf_load_model
+    from Modules.module_data import load_all_jsons, build_test_set
+
+    matplotlib.use('Agg')
+
+    thesis_exp_dir = os.path.join(config.get_thesis_dir(args), 'Images', 'Experimentation')
+    coords_dir = args.directory
+
+    print(f"[INFO] Loading sequences from {coords_dir} ...")
+    seqs, labels = load_all_jsons(coords_dir)
+    print(f"[INFO] Loaded {len(seqs)} sequences")
+
+    status = {}
+
+    for exp in config.EXPERIMENTS:
+        key          = exp['key']
+        display_name = exp['display_name']
+        results_dir  = os.path.join(config.RESULTS_DIR, exp['results_folder'])
+        thesis_subdir = os.path.join(thesis_exp_dir, exp['thesis_subdir'])
+        os.makedirs(thesis_subdir, exist_ok=True)
+
+        exp_status = {'learning_curves': False, 'confusion_matrix': False,
+                      'class_distribution': False}
+        print(f"\n  [{key}] {display_name}")
+
+        # ---- Learning curves ----
+        hist_path = os.path.join(results_dir, 'training_history.json')
+        if os.path.exists(hist_path):
+            with open(hist_path) as f:
+                history = json.load(f)
+            _plot_learning_curves(
+                history, display_name,
+                os.path.join(thesis_subdir, 'learning_curves.png'))
+            exp_status['learning_curves'] = True
+            print(f"    [OK] learning_curves.png")
+        else:
+            print(f"    [SKIP] training_history.json not found")
+
+        # ---- Confusion matrix + class distribution ----
+        model_path = exp['model_path']
+        if not os.path.exists(model_path):
+            print(f"    [SKIP] model not found at {model_path}")
+            status[key] = exp_status
+            continue
+
+        try:
+            model      = tf_load_model(config.safe_model_path(model_path))
+            n_features = model.input_shape[-1]
+            n_out      = model.output_shape[-1]
+            print(f"    [INFO] model loaded (inputs={n_features}, outputs={n_out})")
+
+            X_test, y_test = build_test_set(seqs, labels, n_features)
+            if X_test is None:
+                print(f"    [SKIP] no matching test sequences for {n_features} features")
+                status[key] = exp_status
+                continue
+
+            y_pred = np.argmax(model.predict(X_test, verbose=0), axis=1)
+            if n_out != 5:
+                y_pred = np.array([min(p // 2, 4) for p in y_pred])
+
+            _plot_confusion_matrix(
+                y_test, y_pred, display_name, config.CLASS_LABELS,
+                os.path.join(thesis_subdir, 'confusion_matrix.png'))
+            _plot_class_dist_thesis(
+                y_test, y_pred, display_name, config.CLASS_LABELS,
+                os.path.join(thesis_subdir, 'class_distribution.png'))
+
+            exp_status['confusion_matrix']   = True
+            exp_status['class_distribution'] = True
+            print(f"    [OK] confusion_matrix.png + class_distribution.png "
+                  f"(acc={accuracy_score(y_test, y_pred):.3f})")
+
+        except Exception as err:
+            print(f"    [ERROR] {err}")
+
+        status[key] = exp_status
+
+    # Summary
+    print("\n[SUMMARY] Task regenPlots:")
+    for key, s in status.items():
+        parts = ' '.join(f"{k}={'OK' if v else 'FAIL'}" for k, v in s.items())
+        print(f"  {key}: {parts}")
+
+
+def label_dist(args: argparse.Namespace) -> None:
+    """Generate dataset-wide class distribution histogram.
+
+    Output: PNG saved to the thesis Images/Experimentation/ directory.
+    """
+    from Modules.module_data import load_all_jsons
+
+    matplotlib.use('Agg')
+
+    coords_dir = args.directory
+    print(f"[INFO] Loading sequences from {coords_dir} ...")
+    _, labels = load_all_jsons(coords_dir)
+    print(f"[INFO] Loaded {len(labels)} labels")
+
+    classes = [config.grade_to_class(g) for g in labels]
+    counts  = [Counter(classes).get(c, 0) for c in range(5)]
+    colors  = ['#2196F3', '#4CAF50', '#FF9800', '#F44336', '#9C27B0']
+
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(range(5), counts, color=colors)
+    for bar, cnt in zip(bars, counts):
+        plt.text(bar.get_x() + bar.get_width() / 2.0, bar.get_height() + 2,
+                 str(cnt), ha='center', va='bottom', fontsize=11)
+    plt.xticks(range(5), config.CLASS_LABELS)
+    plt.xlabel('Quality Class')
+    plt.ylabel('Number of Clips')
+    plt.title(f'Class Distribution \u2014 Full Dataset ({len(labels)} clips)')
+    plt.tight_layout()
+
+    out_dir = os.path.join(config.get_thesis_dir(args), 'Images', 'Experimentation')
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, 'label_distribution.png')
+    plt.savefig(out_path, dpi=config.PLOT_DPI)
+    plt.close()
+
+    print(f"[OK] label_distribution.png -> {out_path}")
+    for c, cnt in zip(config.CLASS_LABELS, counts):
+        print(f"  {c}: {cnt}")
+
+
+def sys_output(args: argparse.Namespace) -> None:
+    """Generate side-by-side low vs high quality joint trajectory figure.
+
+    Scans all clips in *args.directory*, finds the first correctly classified
+    Very Low/Low clip and first correctly classified Excellent clip using
+    the BiLSTM Final Model (LSTM_Test03), and plots wrist and elbow Y
+    trajectories side by side.
+
+    Output: system_output_example.png saved to thesis Images/Methodology/.
+    """
+    from tf_keras.models import load_model as tf_load_model
+    from tf_keras.utils import pad_sequences as kpad
+    from Modules.module_data import normalize_sequence
+
+    matplotlib.use('Agg')
+
+    lstm_exp = next(e for e in config.EXPERIMENTS if e['key'] == 'LSTM_Test03')
+    model_path = lstm_exp['model_path']
+    if not os.path.exists(model_path):
+        print(f"[SKIP] LSTM_Test03 model not found at {model_path}")
+        return
+
+    model = tf_load_model(config.safe_model_path(model_path))
+    coords_dir = args.directory
+
+    low_clip  = None   # class 0 or 1
+    high_clip = None   # class 4
+
+    for root, _, files in os.walk(coords_dir):
+        for fname in files:
+            if not fname.endswith('.json'):
+                continue
+            if low_clip and high_clip:
+                break
+
+            with open(os.path.join(root, fname)) as f:
+                data = json.load(f)
+
+            grade = int(data.get('metadata', {}).get('grade', 0) or 0)
+            if grade == 0:
+                continue
+
+            true_class = config.grade_to_class(grade)
+            if true_class not in [0, 1, 4]:
+                continue
+            if true_class in [0, 1] and low_clip:
+                continue
+            if true_class == 4 and high_clip:
+                continue
+
+            pelvis   = np.array(data.get(config.FIELD_PELVIS, []))
+            shoulder = np.array(data.get(config.FIELD_SHOULDER_RELATIVE, []))
+            elbow    = np.array(data.get(config.FIELD_ELBOW_RELATIVE, []))
+            hand     = np.array(data.get(config.FIELD_WRIST_RELATIVE, []))
+
+            if not (len(pelvis) and len(elbow) and len(hand)):
+                continue
+
+            if len(shoulder) > 0:
+                L   = min(len(pelvis), len(shoulder), len(elbow), len(hand))
+                seq = np.concatenate([pelvis[:L], shoulder[:L], elbow[:L], hand[:L]], axis=1)
+            else:
+                L   = min(len(pelvis), len(elbow), len(hand))
+                seq = np.concatenate([pelvis[:L], elbow[:L], hand[:L]], axis=1)
+
+            if L < 10 or seq.shape[1] != 8:
+                continue
+
+            norm_seq = normalize_sequence(seq)
+            padded   = kpad([norm_seq], maxlen=config.MAX_SEQUENCE_LENGTH,
+                            dtype='float32', padding='post', truncating='post')
+            pred_class = int(np.argmax(model.predict(padded, verbose=0), axis=1)[0])
+
+            if pred_class == true_class:
+                clip = (seq, true_class, pred_class, fname)
+                if true_class in [0, 1]:
+                    low_clip  = clip
+                else:
+                    high_clip = clip
+
+    if not low_clip or not high_clip:
+        print(f"[WARN] Could not find both clip types "
+              f"(low={'found' if low_clip else 'not found'}, "
+              f"high={'found' if high_clip else 'not found'})")
+        return
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+    def _panel(ax, seq, pred_class, fname):
+        n = min(len(seq), 90)
+        ax.plot(np.arange(n), seq[:n, 7], label='Right Wrist Y',  linewidth=2)
+        ax.plot(np.arange(n), seq[:n, 5], label='Right Elbow Y',  linewidth=2, linestyle='--')
+        ax.set_xlabel('Frame')
+        ax.set_ylabel('Relative Y Coordinate (px)')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        ax.text(0.05, 0.95,
+                f'Predicted: {config.CLASS_LABELS[pred_class]}',
+                transform=ax.transAxes, fontsize=12, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+
+    low_seq, low_true, low_pred, low_file   = low_clip
+    high_seq, high_true, high_pred, high_file = high_clip
+
+    ax1.set_title(f'{config.CLASS_LABELS[low_true]} Quality Execution\n({low_file})')
+    _panel(ax1, low_seq, low_pred, low_file)
+
+    ax2.set_title(f'{config.CLASS_LABELS[high_true]} Quality Execution\n({high_file})')
+    _panel(ax2, high_seq, high_pred, high_file)
+
+    plt.suptitle('System Output Comparison \u2014 BiLSTM Final Model', fontsize=14)
+    plt.tight_layout()
+
+    out_dir = os.path.join(config.get_thesis_dir(args), 'Images', 'Methodology')
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, 'system_output_example.png')
+    plt.savefig(out_path, dpi=config.PLOT_DPI)
+    plt.close()
+    print(f"[OK] system_output_example.png -> {out_path}")
