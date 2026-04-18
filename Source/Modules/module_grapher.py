@@ -988,14 +988,17 @@ def _save_3d_plot_file(coords: dict, title: str, clip_name: str, out_path: str) 
 def dataset_mosaic(args: argparse.Namespace) -> None:
     """Generate an enhanced dataset mosaic for the thesis Dataset section.
 
-    Layout — 5 rows × 2 columns (one row per quality class):
-      Column 0: Representative video frame at 40% of clip duration, displayed at
-                its natural aspect ratio (no stretching). Carries a color-coded
-                quality-class badge, clip filename, player ID, and grade as an
-                in-frame annotation.
-      Column 1: Trajectory subplot showing right-wrist Y, right-elbow Y, and
-                left-shoulder Y over frames. All joint values are displacements
-                relative to the pelvis reference point (px).
+    Layout — 2 rows × 5 columns (one column per quality class):
+      Row 0: Representative video frame at 40% of clip duration, displayed at
+             its natural aspect ratio (no stretching). A color-coded quality-class
+             badge appears above each frame; player ID, grade, and clip filename
+             appear as a semi-transparent overlay inside the frame (bottom-left).
+      Row 1: Trajectory subplot — right-wrist Y, right-elbow Y, and left-shoulder Y
+             displacements relative to the pelvis reference point (px) over frames.
+
+    Overlap is avoided by placing all frame metadata *inside* the image via
+    annotate() (no xlabel), keeping trajectory titles to a single line, and using
+    a generous hspace between the two rows.
 
     Clips are auto-selected from coords_dir: one per class, preferring the
     player configured in _find_representative_clips, and requiring a matching
@@ -1030,42 +1033,30 @@ def dataset_mosaic(args: argparse.Namespace) -> None:
     except ImportError:
         _cv2 = None
 
-    # Probe one frame to determine the natural aspect ratio (width / height).
-    frame_ar = 16 / 9
-    for c in clips:
-        if c and c['video_path'] and _cv2 is not None:
-            try:
-                probe = _extract_video_frame(c['video_path'], pct=0.40)
-                frame_ar = probe.shape[1] / probe.shape[0]
-                break
-            except Exception:
-                pass
-
-    # Figure dimensions: left col holds the frame at natural aspect ratio.
-    # With width_ratios=[1,1] and total width W, each col = W/2 inches.
-    # Row height is set so that (W/2) / frame_ar = natural frame height.
-    total_w  = 18.0          # inches
-    col_w    = total_w / 2   # frame column width
-    row_h    = col_w / frame_ar   # height that preserves aspect ratio
-    fig_h    = 5 * row_h + 2.0   # 5 rows + top margin for suptitle
-
-    fig = plt.figure(figsize=(total_w, fig_h))
+    # 2 rows × 5 columns.
+    # height_ratios=[2, 3]: frame row compact (≈ natural frame height),
+    # trajectory row taller (needs room for title, labels, content).
+    # wspace=0.22: wide enough so y-axis labels/ticks of adjacent trajectory
+    # subplots never bleed into each other (main overlap source was wspace≈0).
+    # hspace=0.28: gap between frame row and trajectory row prevents titles
+    # from touching the frames above.
+    fig = plt.figure(figsize=(27, 10))
     fig.patch.set_facecolor('white')
     gs = fig.add_gridspec(
-        5, 2,
-        width_ratios=[1, 1],
-        hspace=0.40,    # generous vertical gap to avoid label overlap
-        wspace=0.08,
+        2, 5,
+        height_ratios=[3, 2],
+        hspace=0.28,
+        wspace=0.22,
     )
     fig.suptitle(
         "Representative frames per quality class — Bandeja dataset (484 clips, 6 players)\n"
-        "Right column: joint Y displacements relative to the pelvis reference point",
-        fontsize=12, fontweight='bold', y=1.01
+        "Bottom row: vertical joint displacements relative to the pelvis reference point (px)",
+        fontsize=12, fontweight='bold', y=1.01,
     )
 
-    for row, clip_info in enumerate(clips):
-        ax_frame = fig.add_subplot(gs[row, 0])
-        ax_traj  = fig.add_subplot(gs[row, 1])
+    for col, clip_info in enumerate(clips):
+        ax_frame = fig.add_subplot(gs[0, col])   # top row
+        ax_traj  = fig.add_subplot(gs[1, col])   # bottom row
 
         if clip_info is None:
             for ax in (ax_frame, ax_traj):
@@ -1080,14 +1071,16 @@ def dataset_mosaic(args: argparse.Namespace) -> None:
         json_path  = clip_info['json_path']
         video_path = clip_info['video_path']
 
-        # ---- Column 0: video frame at natural aspect ratio ----
+        # ---- Row 0: video frame ----
+        # axis('off') + imshow with default aspect='equal' → natural aspect ratio.
+        # No xlabel: clip info lives inside the image so nothing extends below
+        # the subplot boundary and risks overlapping the trajectory title.
         ax_frame.axis('off')
         frame_ok = False
         if video_path and _cv2 is not None:
             try:
                 frame = _extract_video_frame(video_path, pct=0.40)
-                # Display at natural resolution — imshow default is aspect='equal'
-                ax_frame.imshow(frame)
+                ax_frame.imshow(frame)   # preserves natural aspect ratio
                 frame_ok = True
             except Exception as e:
                 print(f"  [WARN] {label} frame: {e}")
@@ -1097,22 +1090,22 @@ def dataset_mosaic(args: argparse.Namespace) -> None:
             ax_frame.text(0.5, 0.5, 'Frame unavailable', ha='center', va='center',
                           transform=ax_frame.transAxes, fontsize=9, color='#888888')
 
-        # Color-coded quality badge as axis title
+        # Color-coded quality badge above the frame
         ax_frame.set_title(
             label, fontsize=12, fontweight='bold', color='white', pad=5,
             bbox=dict(boxstyle='round,pad=0.35', facecolor=color,
-                      edgecolor='none', alpha=0.93)
+                      edgecolor='none', alpha=0.93),
         )
-        # Clip metadata as a semi-transparent label inside the image (bottom-left)
+        # Clip metadata overlaid inside the image (bottom-left, semi-transparent)
         ax_frame.annotate(
             f"Player {player_id}  ·  Grade {grade}\n{clip_name}",
             xy=(0.01, 0.02), xycoords='axes fraction',
-            fontsize=7.5, color='white', va='bottom',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.55,
-                      edgecolor='none')
+            fontsize=7, color='white', va='bottom',
+            bbox=dict(boxstyle='round,pad=0.28', facecolor='black',
+                      alpha=0.55, edgecolor='none'),
         )
 
-        # ---- Column 1: trajectory subplot ----
+        # ---- Row 1: trajectory ----
         try:
             coords       = load_coordinates(json_path)
             wrist_ref    = coords['wrist_ref']
@@ -1121,25 +1114,25 @@ def dataset_mosaic(args: argparse.Namespace) -> None:
             n  = len(wrist_ref)
             fr = np.arange(n)
 
-            ax_traj.plot(fr, wrist_ref[:, 1],  color='#d62728', lw=1.5,
+            ax_traj.plot(fr, wrist_ref[:, 1], color='#d62728', lw=1.5,
                          label='Right Wrist Y')
-            ax_traj.plot(fr, elbow_ref[:, 1],  color='#1f77b4', lw=1.5,
+            ax_traj.plot(fr, elbow_ref[:, 1], color='#1f77b4', lw=1.5,
                          label='Right Elbow Y')
             if shoulder_ref is not None:
                 ax_traj.plot(fr, shoulder_ref[:, 1], color='#2ca02c', lw=1.5,
                              label='Left Shoulder Y')
 
-            ax_traj.set_xlabel('Frame number', fontsize=9)
-            ax_traj.set_ylabel('Y displacement from pelvis (px)', fontsize=9)
+            # Single-line title; short ylabel to avoid eating column width
             ax_traj.set_title(
-                f'{label} — vertical joint displacements\n'
-                '(relative to pelvis reference point)',
-                fontsize=9.5, fontweight='bold'
+                f'{label} — Y displacements from pelvis',
+                fontsize=9, fontweight='bold',
             )
-            ax_traj.legend(fontsize=8.5, loc='upper right')
+            ax_traj.set_xlabel('Frame', fontsize=8)
+            ax_traj.set_ylabel('Y (px)', fontsize=8)
+            ax_traj.legend(fontsize=7.5, loc='upper right')
             ax_traj.grid(True, alpha=0.3)
             ax_traj.set_facecolor('#fafafa')
-            ax_traj.tick_params(labelsize=8)
+            ax_traj.tick_params(labelsize=7)
             ax_traj.set_xlim(0, max(n - 1, 1))
 
         except Exception as e:
