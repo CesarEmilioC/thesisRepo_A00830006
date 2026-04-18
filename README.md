@@ -431,6 +431,44 @@ All five commands accept an optional `--thesis_dir` argument to override the def
 
 ---
 
+### 13. Thesis Visualization Commands
+
+These commands generate publication-ready figures for the thesis Dataset and Methodology sections directly from the coordinate data and video clips — no model loading required.
+
+**Generate the dataset mosaic** (5 quality classes × 2 columns: video frame + joint trajectories):
+```bash
+cd Source
+python main.py thesisMosaic \
+  --clips_dir "/path/to/Videos/Clips" \
+  --coords_dir "../Coordinates"
+```
+Output: `Images/Experimentation/dataset_mosaic.png` — a 5-row × 2-column figure. The left column shows a representative video frame for each quality class at its natural aspect ratio (no stretching); the right column shows the vertical joint displacements (wrist, elbow, shoulder) relative to the pelvis over the clip's frames. All frame annotations include the clip filename, player ID, and grade.
+
+**Generate labeled trajectory figures** for Very Low, Medium, and Excellent representative clips:
+```bash
+cd Source
+python main.py thesisTrajectories --coords_dir "../Coordinates"
+```
+Outputs (saved to `Images/Methodology/`):
+- `trajectory_temporal_{clip_name}.png` — X/Y over frame for wrist, elbow, and shoulder (all relative to pelvis). One file per clip.
+- `trajectory_3d_{clip_name}.png` — 3D trajectory (X displacement from pelvis, Y displacement from pelvis, frame number). One file per clip.
+- `trajectory_wrist_comparison_{vl}_vs_{exc}.png` — normalized right-wrist Y overlay comparing Very Low vs Excellent execution.
+- `joint_trajectories_{clip_name}.png` — 2×2 panel showing X/Y over frame for all 4 joints (pelvis in absolute coordinates; shoulder, elbow, wrist as displacements from pelvis).
+
+All figures include the full clip filename in the title so they can be identified unambiguously in the thesis document.
+
+**Save an animated GIF** of the kinematic chain for any clip:
+```bash
+cd Source
+python main.py saveAnimation \
+  --file "../Coordinates/player10/part1/player10_part1_clip12_grade9.json"
+```
+Output: `{clip_name}_animation.gif` saved to `Images/Methodology/` by default. The animation shows the Pelvis → Shoulder → Elbow → Wrist kinematic chain with motion trails, at a reduced playback speed (controlled by `ANIMATION_PLAYBACK_SPEED` in `config.py`). Requires `Pillow` (`pip install Pillow`).
+
+All three commands accept an optional `--thesis_dir` argument to override the default thesis folder path. `thesisMosaic` additionally accepts `--clips_dir` (required, path to the video clips folder outside the repo).
+
+---
+
 ## Model Comparison Results
 
 The following table compares the performance of all three models trained on the same dataset (484 clips, 5-class classification). All models use data augmentation (Gaussian noise, factor=2), balanced class weights, L2 regularization, and ReduceLROnPlateau.

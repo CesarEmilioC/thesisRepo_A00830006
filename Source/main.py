@@ -20,11 +20,14 @@ functionality through subcommands:
     countGrades  Count how many clips exist per grade across the dataset.
     analyzeJSON  Analyze JSON data quality by computing the proportion
                  of valid frames (frames where all joints were detected).
-    regenPlots   Regenerate all 15 experiment plots with display names.
-    labelDist    Generate dataset-wide class distribution histogram.
-    spearman     Compute Spearman rank correlation for the 3 final models.
-    sysOutput    Generate system output comparison figure (low vs high quality).
-    datasetStats Report dataset statistics (clips per player/class/grade).
+    regenPlots          Regenerate all 15 experiment plots with display names.
+    labelDist           Generate dataset-wide class distribution histogram.
+    spearman            Compute Spearman rank correlation for the 3 final models.
+    sysOutput           Generate system output comparison figure (low vs high quality).
+    datasetStats        Report dataset statistics (clips per player/class/grade).
+    thesisMosaic        Generate dataset mosaic (video frame + trajectories per class).
+    thesisTrajectories  Generate labeled trajectory figures for Very Low/Medium/Excellent.
+    saveAnimation       Save the motion animation for one clip as an animated GIF.
 
 Usage examples:
     python main.py pose --video "../Samples/clipSamples/player10_part1_clip0_grade7.mp4"
@@ -47,7 +50,22 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'openPoseRequirements')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'Modules')))
 
-import Modules.module_poseEstimation as module_poseEstimation
+try:
+    import Modules.module_poseEstimation as module_poseEstimation
+    _pose_available = True
+except (ImportError, ModuleNotFoundError) as _pose_err:
+    class _PoseFallback:
+        """Placeholder used when OpenPose dependencies are not installed."""
+        @staticmethod
+        def run_pose_estimation(args):
+            print(f"[ERROR] OpenPose is not available ({_pose_err}). "
+                  "Install tf_slim and all openPoseRequirements to use this command.")
+        @staticmethod
+        def run_json_analysis(args):
+            print(f"[ERROR] OpenPose is not available ({_pose_err}).")
+    module_poseEstimation = _PoseFallback()
+    _pose_available = False
+
 import Modules.module_grapher as module_grapher
 import Modules.module_data as module_data
 import Modules.module_LSTM as module_LSTM
@@ -292,6 +310,53 @@ def main() -> None:
     subparser_dstats.add_argument("--thesis_dir", type=str, default=None,
                                   help="Path to thesis document folder. Default: auto-detected.")
     subparser_dstats.set_defaults(func=module_data.dataset_stats)
+
+    # ---------------------------------------------------
+    # THESIS MOSAIC
+    # ---------------------------------------------------
+    subparser_mosaic = subparsers.add_parser(
+        "thesisMosaic",
+        help="Generate dataset mosaic: video frame + trajectories per quality class.",
+        epilog=('Example: python main.py thesisMosaic '
+                '--clips_dir "../Videos/Clips" --coords_dir "../Coordinates"')
+    )
+    subparser_mosaic.add_argument("--clips_dir", type=str, required=True,
+                                  help="Path to directory containing .mp4 video clips.")
+    subparser_mosaic.add_argument("--coords_dir", type=str, required=True,
+                                  help="Path to directory containing JSON coordinate files.")
+    subparser_mosaic.add_argument("--thesis_dir", type=str, default=None,
+                                  help="Path to thesis document folder. Default: auto-detected.")
+    subparser_mosaic.set_defaults(func=module_grapher.dataset_mosaic)
+
+    # ---------------------------------------------------
+    # THESIS TRAJECTORIES
+    # ---------------------------------------------------
+    subparser_traj = subparsers.add_parser(
+        "thesisTrajectories",
+        help="Generate labeled trajectory figures for Very Low, Medium, and Excellent clips.",
+        epilog='Example: python main.py thesisTrajectories --coords_dir "../Coordinates"'
+    )
+    subparser_traj.add_argument("--coords_dir", type=str, required=True,
+                                help="Path to directory containing JSON coordinate files.")
+    subparser_traj.add_argument("--thesis_dir", type=str, default=None,
+                                help="Path to thesis document folder. Default: auto-detected.")
+    subparser_traj.set_defaults(func=module_grapher.thesis_trajectories)
+
+    # ---------------------------------------------------
+    # SAVE ANIMATION GIF
+    # ---------------------------------------------------
+    subparser_gif = subparsers.add_parser(
+        "saveAnimation",
+        help="Save the motion animation for one clip as an animated GIF.",
+        epilog='Example: python main.py saveAnimation --file "../Coordinates/player10/..."'
+    )
+    subparser_gif.add_argument("--file", type=str, required=True,
+                               help="Path to a JSON coordinate file.")
+    subparser_gif.add_argument("--out_dir", type=str, default=None,
+                               help="Output directory for the GIF. Default: thesis Methodology/.")
+    subparser_gif.add_argument("--thesis_dir", type=str, default=None,
+                               help="Path to thesis document folder. Default: auto-detected.")
+    subparser_gif.set_defaults(func=module_grapher.save_animation_gif)
 
     # ---------------------------------------------------
     args = parser.parse_args()

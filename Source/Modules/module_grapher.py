@@ -15,6 +15,7 @@ Author: Cesar Emilio Castaño Marin
 
 import json
 import os
+import re
 import argparse
 import numpy as np
 import matplotlib
@@ -794,3 +795,661 @@ def sys_output(args: argparse.Namespace) -> None:
     plt.savefig(out_path, dpi=config.PLOT_DPI)
     plt.close()
     print(f"[OK] system_output_example.png -> {out_path}")
+
+
+# ============================================================
+#  THESIS VISUALIZATION — DATASET MOSAIC & TRAJECTORY PLOTS
+# ============================================================
+# Per-class badge colors (consistent across all thesis figures).
+_CLASS_COLORS = {
+    0: '#d62728',  # Very Low  — red
+    1: '#ff7f0e',  # Low       — orange
+    2: '#2ca02c',  # Medium    — green
+    3: '#1f77b4',  # High      — blue
+    4: '#9467bd',  # Excellent — purple
+}
+
+
+def _parse_clip_meta(filename: str):
+    """Return (player_id, part, clip_num, grade) parsed from a filename, or None."""
+    m = re.search(config.FILENAME_REGEX, filename)
+    if m:
+        return int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+    return None
+
+
+def _find_representative_clips(coords_dir: str, clips_dir: str) -> list:
+    """Find one JSON+video pair per quality class (0–4).
+
+    Prefers clips that also have a matching .mp4 in clips_dir.
+    Preferred player per class: 10 for VeryLow/Medium/Excellent, 3 for Low/High.
+
+    Returns a list of 5 dicts (one per class, in order) or None if a class has
+    no candidates. Each dict has keys: label, color, grade, player_id,
+    clip_name, json_path, video_path (str or None).
+    """
+    preferred_player = {0: 10, 1: 3, 2: 10, 3: 3, 4: 10}
+    buckets = {c: [] for c in range(5)}
+
+    for root, _, files in os.walk(coords_dir):
+        for fname in sorted(files):
+            if not fname.endswith('.json'):
+                continue
+            meta = _parse_clip_meta(fname)
+            if meta is None:
+                continue
+            player_id, _, _, grade = meta
+            cls = config.grade_to_class(grade)
+            rel = os.path.relpath(os.path.join(root, fname), coords_dir)
+            vid = os.path.join(clips_dir, rel.replace('.json', '.mp4'))
+            buckets[cls].append({
+                'label':      config.CLASS_LABELS[cls],
+                'color':      _CLASS_COLORS[cls],
+                'grade':      grade,
+                'player_id':  player_id,
+                'clip_name':  os.path.splitext(fname)[0],
+                'json_path':  os.path.join(root, fname),
+                'video_path': vid if os.path.exists(vid) else None,
+            })
+
+    result = []
+    for cls in range(5):
+        cands = buckets[cls]
+        if not cands:
+            result.append(None)
+            continue
+        pid = preferred_player[cls]
+        pick = (next((c for c in cands if c['player_id'] == pid and c['video_path']), None)
+                or next((c for c in cands if c['video_path']), None)
+                or cands[0])
+        result.append(pick)
+    return result
+
+
+def _extract_video_frame(video_path: str, pct: float = 0.40) -> np.ndarray:
+    """Extract the frame at *pct* of clip duration. Returns an RGB uint8 ndarray."""
+    try:
+        import cv2
+    except ImportError:
+        raise ImportError("OpenCV (cv2) required. Install with: pip install opencv-python")
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(total * pct) - 1))
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        raise RuntimeError(f"Cannot read frame from {video_path}")
+    return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+
+def _save_temporal_plot(coords: dict, title: str, clip_name: str, out_path: str) -> None:
+    """Save a temporal X/Y-over-frame plot for wrist, elbow, and shoulder.
+
+    Wrist, elbow, and shoulder values are displacements relative to the pelvis
+    reference point (pelvis is the origin, so 0 = same position as pelvis).
+    Pelvis coordinates are absolute pixel positions in the image frame.
+    """
+    wrist_ref    = coords['wrist_ref']
+    elbow_ref    = coords['elbow_ref']
+    shoulder_ref = coords['shoulder_ref']
+    has_shoulder = shoulder_ref is not None
+
+    n      = len(wrist_ref)
+    frames = np.arange(n)
+    n_rows = 3 if has_shoulder else 2
+
+    fig, axs = plt.subplots(n_rows, 2, figsize=(13, 4 * n_rows))
+    fig.patch.set_facecolor('white')
+    fig.suptitle(f"{title}\nClip: {clip_name}", fontsize=11, fontweight='bold')
+
+    # Wrist/elbow/shoulder values are displacements relative to the pelvis.
+    joint_rows = [
+        ('Right Wrist (relative to pelvis)',    wrist_ref,    'green',     'darkgreen'),
+        ('Right Elbow (relative to pelvis)',    elbow_ref,    'orange',    'red'),
+    ]
+    if has_shoulder:
+        joint_rows.append(
+            ('Left Shoulder (relative to pelvis)', shoulder_ref, 'steelblue', 'darkblue')
+        )
+
+    for row, (jname, jdata, cx, cy) in enumerate(joint_rows):
+        for col, (axis_label, vals, color) in enumerate([('X', jdata[:, 0], cx),
+                                                          ('Y', jdata[:, 1], cy)]):
+            ax = axs[row, col]
+            ax.plot(frames, vals, color=color, linewidth=1.5)
+            ax.set_title(f'{jname}\n{axis_label} component over frame', fontsize=9.5)
+            ax.set_xlabel('Frame number', fontsize=9)
+            ax.set_ylabel(f'{axis_label} displacement from pelvis (px)', fontsize=9)
+            ax.grid(True, alpha=0.3)
+            ax.set_facecolor('#fafafa')
+            ax.set_xlim(0, n - 1)
+
+    fig.text(0.5, -0.01,
+             "Pelvis is the reference origin. Positive values indicate displacement "
+             "to the right (X) or downward (Y) from the pelvis position.",
+             ha='center', fontsize=8, color='#555555', style='italic')
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=config.PLOT_DPI, bbox_inches='tight', facecolor='white')
+    plt.close()
+
+
+def _save_3d_plot_file(coords: dict, title: str, clip_name: str, out_path: str) -> None:
+    """Save a 3D trajectory plot (X, Y, Frame axis) for wrist, elbow, and shoulder.
+
+    Each joint is plotted in a 3D space where X and Y axes represent the joint's
+    displacement from the pelvis reference point, and the depth axis is the frame
+    number (i.e., time progression through the clip).
+    """
+    wrist_ref    = coords['wrist_ref']
+    elbow_ref    = coords['elbow_ref']
+    shoulder_ref = coords['shoulder_ref']
+    has_shoulder = shoulder_ref is not None
+
+    n = len(wrist_ref)
+    t = np.arange(n)
+
+    n_cols = 3 if has_shoulder else 2
+    fig = plt.figure(figsize=(7 * n_cols, 7))
+    fig.patch.set_facecolor('white')
+    fig.suptitle(
+        f"{title}\nClip: {clip_name}\n"
+        "X and Y axes: displacement from pelvis (px)  ·  Depth axis: frame number",
+        fontsize=10, fontweight='bold'
+    )
+
+    specs = [
+        ('Right Wrist (relative to pelvis)',    wrist_ref,    'green'),
+        ('Right Elbow (relative to pelvis)',    elbow_ref,    'purple'),
+    ]
+    if has_shoulder:
+        specs.append(('Left Shoulder (relative to pelvis)', shoulder_ref, 'steelblue'))
+
+    for idx, (jname, jdata, color) in enumerate(specs, start=1):
+        ax = fig.add_subplot(1, n_cols, idx, projection='3d')
+        ax.plot3D(jdata[:, 0], t, jdata[:, 1], color=color, linewidth=1.5)
+        ax.set_title(f'3D Trajectory\n{jname}', fontsize=9.5)
+        ax.set_xlabel('X from pelvis (px)', fontsize=7.5, labelpad=6)
+        ax.set_ylabel('Frame number',       fontsize=7.5, labelpad=6)
+        ax.set_zlabel('Y from pelvis (px)', fontsize=7.5, labelpad=6)
+        ax.tick_params(labelsize=7)
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=config.PLOT_DPI, bbox_inches='tight', facecolor='white')
+    plt.close()
+
+
+# -----------------------------------------------------------
+# CLI-callable thesis visualization functions
+# -----------------------------------------------------------
+
+def dataset_mosaic(args: argparse.Namespace) -> None:
+    """Generate an enhanced dataset mosaic for the thesis Dataset section.
+
+    Layout — 5 rows × 2 columns (one row per quality class):
+      Column 0: Representative video frame at 40% of clip duration, displayed at
+                its natural aspect ratio (no stretching). Carries a color-coded
+                quality-class badge, clip filename, player ID, and grade as an
+                in-frame annotation.
+      Column 1: Trajectory subplot showing right-wrist Y, right-elbow Y, and
+                left-shoulder Y over frames. All joint values are displacements
+                relative to the pelvis reference point (px).
+
+    Clips are auto-selected from coords_dir: one per class, preferring the
+    player configured in _find_representative_clips, and requiring a matching
+    .mp4 video file in clips_dir.
+
+    Output: {thesis_dir}/Images/Experimentation/dataset_mosaic.png
+
+    CLI usage:
+        python main.py thesisMosaic --clips_dir "../Videos/Clips" \\
+               --coords_dir "../Coordinates" [--thesis_dir "..."]
+    """
+    matplotlib.use('Agg')
+
+    clips_dir  = args.clips_dir
+    coords_dir = args.coords_dir
+    thesis_dir = config.get_thesis_dir(args)
+    out_dir    = os.path.join(thesis_dir, 'Images', 'Experimentation')
+    os.makedirs(out_dir, exist_ok=True)
+
+    print(f"[INFO] Scanning coords: {coords_dir}")
+    print(f"[INFO] Scanning clips:  {clips_dir}")
+    clips = _find_representative_clips(coords_dir, clips_dir)
+
+    print("[INFO] Selected clips for mosaic:")
+    for c in clips:
+        if c:
+            vid = os.path.basename(c['video_path']) if c['video_path'] else 'NO VIDEO'
+            print(f"  {c['label']:12s} -> {c['clip_name']}  |  video: {vid}")
+
+    try:
+        import cv2 as _cv2
+    except ImportError:
+        _cv2 = None
+
+    # Probe one frame to determine the natural aspect ratio (width / height).
+    frame_ar = 16 / 9
+    for c in clips:
+        if c and c['video_path'] and _cv2 is not None:
+            try:
+                probe = _extract_video_frame(c['video_path'], pct=0.40)
+                frame_ar = probe.shape[1] / probe.shape[0]
+                break
+            except Exception:
+                pass
+
+    # Figure dimensions: left col holds the frame at natural aspect ratio.
+    # With width_ratios=[1,1] and total width W, each col = W/2 inches.
+    # Row height is set so that (W/2) / frame_ar = natural frame height.
+    total_w  = 18.0          # inches
+    col_w    = total_w / 2   # frame column width
+    row_h    = col_w / frame_ar   # height that preserves aspect ratio
+    fig_h    = 5 * row_h + 2.0   # 5 rows + top margin for suptitle
+
+    fig = plt.figure(figsize=(total_w, fig_h))
+    fig.patch.set_facecolor('white')
+    gs = fig.add_gridspec(
+        5, 2,
+        width_ratios=[1, 1],
+        hspace=0.40,    # generous vertical gap to avoid label overlap
+        wspace=0.08,
+    )
+    fig.suptitle(
+        "Representative frames per quality class — Bandeja dataset (484 clips, 6 players)\n"
+        "Right column: joint Y displacements relative to the pelvis reference point",
+        fontsize=12, fontweight='bold', y=1.01
+    )
+
+    for row, clip_info in enumerate(clips):
+        ax_frame = fig.add_subplot(gs[row, 0])
+        ax_traj  = fig.add_subplot(gs[row, 1])
+
+        if clip_info is None:
+            for ax in (ax_frame, ax_traj):
+                ax.axis('off')
+            continue
+
+        label      = clip_info['label']
+        color      = clip_info['color']
+        grade      = clip_info['grade']
+        player_id  = clip_info['player_id']
+        clip_name  = clip_info['clip_name']
+        json_path  = clip_info['json_path']
+        video_path = clip_info['video_path']
+
+        # ---- Column 0: video frame at natural aspect ratio ----
+        ax_frame.axis('off')
+        frame_ok = False
+        if video_path and _cv2 is not None:
+            try:
+                frame = _extract_video_frame(video_path, pct=0.40)
+                # Display at natural resolution — imshow default is aspect='equal'
+                ax_frame.imshow(frame)
+                frame_ok = True
+            except Exception as e:
+                print(f"  [WARN] {label} frame: {e}")
+
+        if not frame_ok:
+            ax_frame.set_facecolor('#eeeeee')
+            ax_frame.text(0.5, 0.5, 'Frame unavailable', ha='center', va='center',
+                          transform=ax_frame.transAxes, fontsize=9, color='#888888')
+
+        # Color-coded quality badge as axis title
+        ax_frame.set_title(
+            label, fontsize=12, fontweight='bold', color='white', pad=5,
+            bbox=dict(boxstyle='round,pad=0.35', facecolor=color,
+                      edgecolor='none', alpha=0.93)
+        )
+        # Clip metadata as a semi-transparent label inside the image (bottom-left)
+        ax_frame.annotate(
+            f"Player {player_id}  ·  Grade {grade}\n{clip_name}",
+            xy=(0.01, 0.02), xycoords='axes fraction',
+            fontsize=7.5, color='white', va='bottom',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.55,
+                      edgecolor='none')
+        )
+
+        # ---- Column 1: trajectory subplot ----
+        try:
+            coords       = load_coordinates(json_path)
+            wrist_ref    = coords['wrist_ref']
+            elbow_ref    = coords['elbow_ref']
+            shoulder_ref = coords['shoulder_ref']
+            n  = len(wrist_ref)
+            fr = np.arange(n)
+
+            ax_traj.plot(fr, wrist_ref[:, 1],  color='#d62728', lw=1.5,
+                         label='Right Wrist Y')
+            ax_traj.plot(fr, elbow_ref[:, 1],  color='#1f77b4', lw=1.5,
+                         label='Right Elbow Y')
+            if shoulder_ref is not None:
+                ax_traj.plot(fr, shoulder_ref[:, 1], color='#2ca02c', lw=1.5,
+                             label='Left Shoulder Y')
+
+            ax_traj.set_xlabel('Frame number', fontsize=9)
+            ax_traj.set_ylabel('Y displacement from pelvis (px)', fontsize=9)
+            ax_traj.set_title(
+                f'{label} — vertical joint displacements\n'
+                '(relative to pelvis reference point)',
+                fontsize=9.5, fontweight='bold'
+            )
+            ax_traj.legend(fontsize=8.5, loc='upper right')
+            ax_traj.grid(True, alpha=0.3)
+            ax_traj.set_facecolor('#fafafa')
+            ax_traj.tick_params(labelsize=8)
+            ax_traj.set_xlim(0, max(n - 1, 1))
+
+        except Exception as e:
+            ax_traj.axis('off')
+            ax_traj.text(0.5, 0.5, f'Trajectory unavailable\n{e}',
+                         ha='center', va='center', transform=ax_traj.transAxes,
+                         fontsize=7, color='#888888')
+
+    out_path = os.path.join(out_dir, 'dataset_mosaic.png')
+    plt.savefig(out_path, dpi=config.PLOT_DPI, bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"[OK] dataset_mosaic.png -> {out_path}")
+
+
+def thesis_trajectories(args: argparse.Namespace) -> None:
+    """Generate all labeled trajectory figures for the thesis Methodology chapter.
+
+    Auto-selects one representative clip for Very Low (class 0), Medium (class 2),
+    and Excellent (class 4) from coords_dir.  For each clip it produces:
+
+    - trajectory_temporal_{clip_name}.png  — X/Y over frame for wrist, elbow, shoulder
+    - trajectory_3d_{clip_name}.png        — 3D trajectory (X, Y, Frame axis)
+
+    For the Very Low / Excellent pair it also produces:
+    - trajectory_wrist_comparison_{vl}_vs_{exc}.png  — normalised wrist-Y overlay
+
+    For the Excellent clip only:
+    - joint_trajectories_{clip_name}.png   — 2×2 panel: pelvis, shoulder, elbow, wrist
+
+    All figure titles include the full clip filename so images can be identified
+    unambiguously when placed in the thesis document.
+
+    Output directory: {thesis_dir}/Images/Methodology/
+
+    CLI usage:
+        python main.py thesisTrajectories --coords_dir "../Coordinates" \\
+               [--thesis_dir "..."]
+    """
+    matplotlib.use('Agg')
+
+    coords_dir = args.coords_dir
+    thesis_dir = config.get_thesis_dir(args)
+    out_dir    = os.path.join(thesis_dir, 'Images', 'Methodology')
+    os.makedirs(out_dir, exist_ok=True)
+
+    # ---- Auto-select one clip per target class ----
+    target = {0: None, 2: None, 4: None}
+    for root, _, files in os.walk(coords_dir):
+        for fname in sorted(files):
+            if not fname.endswith('.json'):
+                continue
+            meta = _parse_clip_meta(fname)
+            if meta is None:
+                continue
+            _, _, _, grade = meta
+            cls = config.grade_to_class(grade)
+            if cls in target and target[cls] is None:
+                target[cls] = os.path.join(root, fname)
+        if all(v is not None for v in target.values()):
+            break
+
+    label_map = {0: 'Very Low', 2: 'Medium', 4: 'Excellent'}
+
+    generated = []
+
+    for cls, json_path in target.items():
+        if json_path is None:
+            print(f"[WARN] No clip found for class {label_map[cls]}")
+            continue
+
+        clip_name = os.path.splitext(os.path.basename(json_path))[0]
+        label     = label_map[cls]
+        print(f"\n[INFO] {label} clip: {clip_name}")
+        coords = load_coordinates(json_path)
+
+        # Temporal plot
+        t_out = os.path.join(out_dir, f'trajectory_temporal_{clip_name}.png')
+        _save_temporal_plot(
+            coords,
+            title=f'Joint Trajectories over Frame — {label} Execution',
+            clip_name=clip_name,
+            out_path=t_out
+        )
+        generated.append(t_out)
+        print(f"  [OK] trajectory_temporal_{clip_name}.png")
+
+        # 3D plot
+        d3_out = os.path.join(out_dir, f'trajectory_3d_{clip_name}.png')
+        _save_3d_plot_file(
+            coords,
+            title=f'3D Trajectories (X, Y, Frame) — {label} Execution',
+            clip_name=clip_name,
+            out_path=d3_out
+        )
+        generated.append(d3_out)
+        print(f"  [OK] trajectory_3d_{clip_name}.png")
+
+    # ---- Wrist-Y comparison: Very Low vs Excellent ----
+    if target[0] and target[4]:
+        vl_name  = os.path.splitext(os.path.basename(target[0]))[0]
+        exc_name = os.path.splitext(os.path.basename(target[4]))[0]
+        c_vl     = load_coordinates(target[0])
+        c_exc    = load_coordinates(target[4])
+
+        def _norm01(arr):
+            mn, mx = arr.min(), arr.max()
+            return (arr - mn) / (mx - mn + 1e-8)
+
+        w_vl  = _norm01(c_vl['wrist_ref'][:, 1].astype(float))
+        w_exc = _norm01(c_exc['wrist_ref'][:, 1].astype(float))
+
+        fig, ax = plt.subplots(figsize=(11, 5))
+        fig.patch.set_facecolor('white')
+        ax.plot(np.arange(len(w_vl)),  w_vl,  color='#d62728', lw=2.0,
+                label=f'Very Low — {vl_name}')
+        ax.plot(np.arange(len(w_exc)), w_exc, color='#9467bd', lw=2.0,
+                label=f'Excellent — {exc_name}')
+        ax.set_xlabel('Frame number', fontsize=11)
+        ax.set_ylabel('Wrist Y displacement from pelvis (normalized 0–1)', fontsize=10)
+        ax.set_title(
+            'Right-Wrist Vertical Trajectory: Very Low vs Excellent Execution\n'
+            f'{vl_name}  vs  {exc_name}',
+            fontsize=11, fontweight='bold'
+        )
+        ax.legend(fontsize=10)
+        ax.set_facecolor('#fafafa')
+        ax.grid(True, alpha=0.3)
+        ax.text(0.02, 0.97,
+                "Wrist Y = vertical displacement from pelvis (px), normalized to [0, 1]\n"
+                "for each clip independently to compare movement patterns across quality levels.",
+                transform=ax.transAxes, fontsize=8, va='top', color='#555555',
+                style='italic',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='#f5f5f5',
+                          edgecolor='#cccccc', alpha=0.9))
+
+        cmp_out = os.path.join(out_dir,
+                               f'trajectory_wrist_comparison_{vl_name}_vs_{exc_name}.png')
+        plt.tight_layout()
+        plt.savefig(cmp_out, dpi=config.PLOT_DPI, bbox_inches='tight', facecolor='white')
+        plt.close()
+        generated.append(cmp_out)
+        print(f"\n[OK] {os.path.basename(cmp_out)}")
+
+    # ---- Per-joint 4-panel for Excellent clip ----
+    if target[4]:
+        exc_name = os.path.splitext(os.path.basename(target[4]))[0]
+        coords   = load_coordinates(target[4])
+
+        pelvis       = coords['pelvis']
+        shoulder_ref = coords['shoulder_ref']
+        elbow_ref    = coords['elbow_ref']
+        wrist_ref    = coords['wrist_ref']
+        n      = len(pelvis)
+        frames = np.arange(n)
+
+        # Pelvis = absolute pixel coordinates. All others = displacement from pelvis.
+        panels = [
+            ('Pelvis',
+             'Absolute pixel position in frame (px)',
+             pelvis),
+            ('Left Shoulder\n(relative to pelvis)',
+             'Displacement from pelvis (px)',
+             shoulder_ref if shoulder_ref is not None else np.zeros((n, 2))),
+            ('Right Elbow\n(relative to pelvis)',
+             'Displacement from pelvis (px)',
+             elbow_ref),
+            ('Right Wrist\n(relative to pelvis)',
+             'Displacement from pelvis (px)',
+             wrist_ref),
+        ]
+
+        fig, axes = plt.subplots(2, 2, figsize=(14, 8))
+        fig.patch.set_facecolor('white')
+        fig.suptitle(
+            f'Per-Joint X/Y Trajectories over Frames — Excellent Execution\nClip: {exc_name}\n'
+            'Pelvis: absolute pixel coordinates  |  Other joints: displacement from pelvis',
+            fontsize=11, fontweight='bold'
+        )
+
+        for ax, (jname, ylabel, jdata) in zip(axes.flat, panels):
+            ax.plot(frames, jdata[:n, 0], color='steelblue',  lw=1.8, label='x (horizontal)')
+            ax.plot(frames, jdata[:n, 1], color='darkorange', lw=1.8, label='y (vertical)')
+            ax.set_title(jname, fontsize=11, fontweight='bold')
+            ax.set_xlabel('Frame number (0–89)', fontsize=9)
+            ax.set_ylabel(ylabel, fontsize=9)
+            ax.legend(fontsize=9)
+            ax.set_facecolor('#fafafa')
+            ax.grid(True, alpha=0.3)
+            ax.set_xlim(0, max(n - 1, 89))
+
+        pj_out = os.path.join(out_dir, f'joint_trajectories_{exc_name}.png')
+        plt.tight_layout()
+        plt.savefig(pj_out, dpi=config.PLOT_DPI, bbox_inches='tight', facecolor='white')
+        plt.close()
+        generated.append(pj_out)
+        print(f"[OK] joint_trajectories_{exc_name}.png")
+
+    print(f"\n[SUMMARY] {len(generated)} files saved to {out_dir}")
+
+
+def save_animation_gif(args: argparse.Namespace) -> None:
+    """Save the motion animation for one clip as an animated GIF.
+
+    Renders the same kinematic-chain animation as the interactive `animate`
+    command but writes the result to disk using Pillow (no display required).
+    Playback speed is controlled by config.ANIMATION_PLAYBACK_SPEED.
+
+    Output: {out_dir}/{clip_name}_animation.gif
+        Default out_dir: {thesis_dir}/Images/Methodology/
+
+    CLI usage:
+        python main.py saveAnimation --file "../Coordinates/player10/..."
+               [--out_dir "path/to/output"] [--thesis_dir "..."]
+    """
+    matplotlib.use('Agg')
+
+    json_path = args.file
+    out_dir   = (getattr(args, 'out_dir', None)
+                 or os.path.join(config.get_thesis_dir(args), 'Images', 'Methodology'))
+    os.makedirs(out_dir, exist_ok=True)
+
+    clip_name = os.path.splitext(os.path.basename(json_path))[0]
+    print(f"[INFO] Generating animation GIF for: {clip_name}")
+
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    pelvis     = np.array(data[config.FIELD_PELVIS])
+    elbow      = np.array(data[config.FIELD_ELBOW_ORIGINAL])
+    wrist      = np.array(data[config.FIELD_WRIST_ORIGINAL])
+    timestamps = np.array(data['timestamps'])
+    meta       = data.get('metadata', {})
+    fps        = float(meta.get('fps', 30))
+
+    has_shoulder = (config.FIELD_SHOULDER_ORIGINAL in data
+                    and len(data[config.FIELD_SHOULDER_ORIGINAL]) > 0)
+    shoulder = np.array(data[config.FIELD_SHOULDER_ORIGINAL]) if has_shoulder else None
+
+    all_pts = np.vstack([pelvis, elbow, wrist] + ([shoulder] if has_shoulder else []))
+    x_min, x_max = all_pts[:, 0].min(), all_pts[:, 0].max()
+    y_min, y_max = all_pts[:, 1].min(), all_pts[:, 1].max()
+    mx = (x_max - x_min) * config.COORDINATE_MARGIN_RATIO
+    my = (y_max - y_min) * config.COORDINATE_MARGIN_RATIO
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+    fig.patch.set_facecolor('white')
+    ax.set_facecolor('#fafafa')
+    ax.set_title(f'Motion Animation\n{clip_name}', fontsize=10)
+    ax.set_xlim(x_min - mx, x_max + mx)
+    ax.set_ylim(y_min - my, y_max + my)
+    ax.set_xlabel('X (px)')
+    ax.set_ylabel('Y (px)')
+    ax.grid(True, linestyle='--', alpha=0.4)
+
+    scat_pelvis, = ax.plot([], [], 'o', color='blue',   label='Pelvis',      markersize=8)
+    scat_elbow,  = ax.plot([], [], 'o', color='green',  label='Right Elbow', markersize=8)
+    scat_wrist,  = ax.plot([], [], 'o', color='red',    label='Right Wrist', markersize=8)
+    line_arm,    = ax.plot([], [], '-', color='orange',  lw=2, label='Arm')
+    trail_p,     = ax.plot([], [], '--', color='blue',   alpha=0.35)
+    trail_e,     = ax.plot([], [], '--', color='green',  alpha=0.35)
+    trail_w,     = ax.plot([], [], '--', color='red',    alpha=0.35)
+
+    artists = [scat_pelvis, scat_elbow, scat_wrist, line_arm, trail_p, trail_e, trail_w]
+
+    if has_shoulder:
+        scat_sh,  = ax.plot([], [], 'o',  color='purple', label='Left Shoulder', markersize=8)
+        trail_sh, = ax.plot([], [], '--', color='purple',  alpha=0.35)
+        artists.extend([scat_sh, trail_sh])
+
+    ax.legend(loc='upper left', fontsize=7)
+
+    def _init():
+        for a in artists:
+            a.set_data([], [])
+        return tuple(artists)
+
+    def _update(i):
+        px, py = pelvis[i]
+        ex, ey = elbow[i]
+        wx, wy = wrist[i]
+        scat_pelvis.set_data([px], [py])
+        scat_elbow.set_data([ex], [ey])
+        scat_wrist.set_data([wx], [wy])
+        trail_p.set_data(pelvis[:i, 0], pelvis[:i, 1])
+        trail_e.set_data(elbow[:i, 0],  elbow[:i, 1])
+        trail_w.set_data(wrist[:i, 0],  wrist[:i, 1])
+        if has_shoulder:
+            sx, sy = shoulder[i]
+            scat_sh.set_data([sx], [sy])
+            trail_sh.set_data(shoulder[:i, 0], shoulder[:i, 1])
+            line_arm.set_data([px, sx, ex, wx], [py, sy, ey, wy])
+        else:
+            line_arm.set_data([ex, wx], [ey, wy])
+        return tuple(artists)
+
+    interval = int(1000 / (fps * config.ANIMATION_PLAYBACK_SPEED))
+    ani = animation.FuncAnimation(
+        fig, _update, frames=len(timestamps),
+        init_func=_init, blit=True, interval=interval, repeat=False
+    )
+
+    out_path = os.path.join(out_dir, f'{clip_name}_animation.gif')
+    try:
+        writer = animation.PillowWriter(
+            fps=max(1, int(fps * config.ANIMATION_PLAYBACK_SPEED))
+        )
+        ani.save(out_path, writer=writer)
+        print(f"[OK] Animation GIF -> {out_path}")
+    except Exception as e:
+        print(f"[ERROR] Could not save GIF: {e}")
+        print("       Ensure Pillow is installed: pip install Pillow")
+    finally:
+        plt.close()
