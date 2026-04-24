@@ -23,7 +23,7 @@ player{N}_part{M}_clip{K}_grade{G}.json
 
 ## Grade Scale
 
-Grades represent the quality of the bandeja movement technique, rated from 1 to 10. For LSTM classification, grades are grouped into 5 classes:
+Grades represent the quality of the bandeja movement technique, rated from 1 to 10. For model classification (LSTM, GRU, TCN), grades are grouped into 5 classes:
 
 | Grade | Class | Label      | Description                                    |
 |-------|-------|------------|------------------------------------------------|
@@ -137,7 +137,7 @@ Interpolation is applied **independently per keypoint and per axis** (X, Y). For
 
 The `interpolated_frames` metadata field counts the total number of keypoint-frame interpolations that were performed (e.g., if shoulder was interpolated in 3 frames and elbow in 2, the count is 5).
 
-This approach produces more complete and continuous coordinate sequences for the LSTM model, compared to discarding frames with any missing keypoint.
+This approach produces more complete and continuous coordinate sequences for the temporal models (LSTM, GRU, TCN), compared to discarding frames with any missing keypoint.
 
 ---
 
@@ -164,9 +164,9 @@ The following keypoint indices from the Body-25 model are used:
 
 When multiple humans are detected in a frame, the system selects the person with the **rightmost pelvis position** (largest X coordinate). This heuristic works because the camera is positioned to the left of the court, so the target player performing the bandeja is always the rightmost person in the frame.
 
-### LSTM Feature Vector
+### Model Feature Vector
 
-Each frame produces 8 features for the LSTM model:
+Each frame produces 8 features, which are consumed identically by all three temporal architectures (LSTM, GRU, TCN):
 
 | Feature Index | Source                  | Description                        |
 |---------------|-------------------------|------------------------------------|
@@ -177,6 +177,6 @@ Each frame produces 8 features for the LSTM model:
 
 Sequences are padded or truncated to `MAX_SEQUENCE_LENGTH` (90) frames and independently normalized using per-clip zero-mean, unit-variance normalization.
 
-### LSTM Classification
+### Classification Output
 
-The model classifies clips into 5 quality classes (see Grade Scale above). Class weights are computed using `sklearn.utils.class_weight.compute_class_weight('balanced')` to handle class imbalance during training.
+All models classify clips into 5 quality classes (see Grade Scale above). Class weights are computed using `sklearn.utils.class_weight.compute_class_weight('balanced')` to handle class imbalance during training. The output layer is a softmax over the 5 classes, and the predicted label is the argmax.

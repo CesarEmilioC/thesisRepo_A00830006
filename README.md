@@ -21,9 +21,16 @@ To replicate the development environment on another machine:
    pip install -r requirements.txt
    ```
 
-   The system requires **Python 3.11+** and **TensorFlow 2.18+** (latest stable).
+   The pinned versions target **Python 3.11.9**, **TensorFlow 2.21.0**,
+   **Keras 3.14.0**, and **OpenCV 4.9**. The OpenPose-related dependencies
+   (`tf_slim`, `tensorpack`, `fire`, `dill`, `slidingwindow`, `msgpack`,
+   `pycocotools`) are required only for the `pose` and `analyzeJSON`
+   subcommands; all other commands work without them thanks to the lazy
+   import + fallback in `Source/main.py`.
 
-This ensures that all dependencies and versions used in development are reproduced accurately.
+   `tf_keras` is also pinned because the LSTM/GRU models in `Source/Models/`
+   were trained under Keras 2 and need the Keras 2 compatibility layer to
+   load in a Keras 3 environment.
 
 ---
 
@@ -111,32 +118,56 @@ https://tecmx-my.sharepoint.com/:f:/g/personal/a00830006_tec_mx/EuvOsh32lh5El-Ai
 
 ### Video Folder Structure
 
+The dataset covers **6 players** (IDs: 3, 4, 5, 6, 9, 10). Each player has one or
+two recording sessions (`partM`); each part is split into individual _bandeja_
+clips named `playerN_partM_clipK_gradeG.mp4`.
+
 ```bash
 Videos/
-|-- Original Videos/           # Full uncut recordings per player
-|   |-- player1/
-|   |   |-- player1_part1.mp4
-|   |   +-- player1_part2.mp4
-|   +-- ...
+|-- Original Videos/                  # Full uncut recordings per player
+|   |-- player3/
+|   |   |-- player3_part1.mp4
+|   |   +-- player3_part2.mp4
+|   |-- player4/
+|   |   +-- player4_part1.mp4
+|   |-- player5/
+|   |   |-- player5_part1.mp4
+|   |   +-- player5_part2.mp4
+|   |-- player6/
+|   |   |-- player6_part1.mp4
+|   |   +-- player6_part2.mp4
+|   |-- player9/
+|   |   |-- player9_part1.mp4
+|   |   +-- player9_part2.mp4
+|   +-- player10/
+|       +-- player10_part1.mp4
 |
-|-- Clips/                     # Pre-cut individual bandeja shots
-|   |-- player1/
+|-- Clips/                            # Pre-cut individual bandeja shots
+|   |-- player3/
 |   |   |-- part1/
-|   |   |   |-- player1_part1_clip1_gradeY.mp4
+|   |   |   |-- player3_part1_clip1_grade2.mp4
 |   |   |   +-- ...
 |   |   +-- part2/
-|   |       +-- ...
+|   +-- ...                           # player4..player10 follow the same scheme
+|
+|-- Original Videos Cuts/             # JSON files with timestamp cuts per video
+|   |-- player3/
+|   |   |-- player3_part1.json
+|   |   +-- player3_part2.json
 |   +-- ...
 |
-|-- Original Video Cuts/       # JSON files with timestamp cuts per video
-|   |-- player1/
-|   |   |-- player1_part1.json
-|   |   +-- ...
-|   +-- ...
+|-- Acuerdos Uso de Datos/            # Signed data-use consent forms per player
+|   |-- Acuerdo_<Player>.md           # consent template
+|   +-- Acuerdo_<Player>_firmado.pdf  # signed copy
 |
-|-- createClips.py             # Script to cut original videos into clips
-+-- playerSamples_trainingData.xls  # Grade labels spreadsheet
+|-- createClips.py                    # Script that cuts original videos into clips
++-- playersSample_trainingData.xlsx   # Grade labels spreadsheet (1-10 per clip)
 ```
+
+> **Note:** `Videos/` is hosted on OneDrive and is **not tracked in Git**. The
+> path on disk contains a non-ASCII character (`Maestría`) that TensorFlow's
+> C++ file I/O cannot read directly; models are copied to a temp dir before
+> loading via `safe_model_path()` in `Source/config.py`.
 
 ---
 
