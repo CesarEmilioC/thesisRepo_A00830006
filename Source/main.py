@@ -32,10 +32,14 @@ functionality through subcommands:
 Usage examples:
     python main.py pose --video "../Samples/clipSamples/player10_part1_clip0_grade7.mp4"
     python main.py plot --file "../Samples/coordinateSamples/player10_part1_clip0_grade7.json" --type all
-    python main.py trainLSTM --directory "../Coordinates" --run_name Test01 --model_path "Models/lstm_model.h5"
-    python main.py predictLSTM --file "../Samples/coordinateSamples/player10_part1_clip0_grade7.json"
+    python main.py trainLSTM --directory "../Coordinates"
+    python main.py predictLSTM --file "../Samples/coordinateSamples/player10_part1_clip0_grade7.json" --model-path "Models/lstm_model.h5"
     python main.py countGrades --directory "../Coordinates"
     python main.py analyzeJSON --directory "../Coordinates"
+
+CLI conventions:
+    All multi-word flags use kebab-case (dashes), e.g. --show-video, --model-path,
+    --thesis-dir. argparse maps these to underscore attributes internally.
 
 Author: Cesar Emilio Castaño Marin
 Project: Thesis - Smash Vision / Paddle Tennis Movement Feedback System
@@ -102,8 +106,18 @@ def main() -> None:
                                 help="OpenPose model type. Default: mobilenet_thin.")
     subparser_pose.add_argument("--show-process", action="store_true",
                                 help="Display pose estimation details during processing.")
-    subparser_pose.add_argument("--show_video", action="store_true",
+    subparser_pose.add_argument("--show-video", action="store_true",
                                 help="Display video window during processing.")
+    subparser_pose.add_argument("--output-dir", type=str, default=None,
+                                help=("Directory where the JSON (and optional mosaic) "
+                                      "will be saved. If provided, the output is written "
+                                      "flat (no player/part subfolders). "
+                                      "Default: ../Coordinates/player{N}/part{M}/."))
+    subparser_pose.add_argument("--save-frames-mosaic", action="store_true",
+                                help=("Save a mosaic figure with up to 5 frames where "
+                                      "all 4 joints (pelvis, left shoulder, right elbow, "
+                                      "right wrist) were detected, including a color "
+                                      "legend. Saved alongside the JSON output."))
     subparser_pose.set_defaults(func=module_poseEstimation.run_pose_estimation)
 
     # ---------------------------------------------------
@@ -156,7 +170,7 @@ def main() -> None:
     )
     subparser_predict.add_argument("--file", type=str, required=True,
                                    help="Path to a JSON coordinate file.")
-    subparser_predict.add_argument("--model_path", type=str,
+    subparser_predict.add_argument("--model-path", type=str,
                                    default=None,
                                    help="Path to the trained LSTM model. Default: latest lstmModel in Models/.")
     subparser_predict.set_defaults(func=module_LSTM.predict_clip)
@@ -167,7 +181,7 @@ def main() -> None:
     subparser_train_gru = subparsers.add_parser(
         "trainGRU",
         help="Train the Bidirectional GRU model on coordinate data.",
-        epilog='Example: python main.py trainGRU --directory "../Coordinates" --model_path "Models/gru_model.h5"'
+        epilog='Example: python main.py trainGRU --directory "../Coordinates" --model-path "Models/gru_model.h5"'
     )
     subparser_train_gru.add_argument("--directory", type=str, required=True,
                                       help="Path to directory containing JSON coordinate files.")
@@ -183,7 +197,7 @@ def main() -> None:
     )
     subparser_predict_gru.add_argument("--file", type=str, required=True,
                                         help="Path to a JSON coordinate file.")
-    subparser_predict_gru.add_argument("--model_path", type=str,
+    subparser_predict_gru.add_argument("--model-path", type=str,
                                         default=None,
                                         help="Path to the trained GRU model. Default: latest gruModel in Models/.")
     subparser_predict_gru.set_defaults(func=module_GRU.predict_clip)
@@ -194,7 +208,7 @@ def main() -> None:
     subparser_train_tcn = subparsers.add_parser(
         "trainTCN",
         help="Train the TCN (Temporal Convolutional Network) model on coordinate data.",
-        epilog='Example: python main.py trainTCN --directory "../Coordinates" --model_path "Models/tcn_model.h5"'
+        epilog='Example: python main.py trainTCN --directory "../Coordinates" --model-path "Models/tcn_model.h5"'
     )
     subparser_train_tcn.add_argument("--directory", type=str, required=True,
                                       help="Path to directory containing JSON coordinate files.")
@@ -210,7 +224,7 @@ def main() -> None:
     )
     subparser_predict_tcn.add_argument("--file", type=str, required=True,
                                         help="Path to a JSON coordinate file.")
-    subparser_predict_tcn.add_argument("--model_path", type=str,
+    subparser_predict_tcn.add_argument("--model-path", type=str,
                                         default=None,
                                         help="Path to the trained TCN model. Default: latest tcnModel in Models/.")
     subparser_predict_tcn.set_defaults(func=module_TCN.predict_clip)
@@ -251,7 +265,7 @@ def main() -> None:
     )
     subparser_regen.add_argument("--directory", type=str, required=True,
                                  help="Path to directory containing JSON coordinate files.")
-    subparser_regen.add_argument("--thesis_dir", type=str, default=None,
+    subparser_regen.add_argument("--thesis-dir", type=str, default=None,
                                  help="Path to thesis document folder. Default: auto-detected.")
     subparser_regen.set_defaults(func=module_grapher.regen_plots)
 
@@ -265,7 +279,7 @@ def main() -> None:
     )
     subparser_ldist.add_argument("--directory", type=str, required=True,
                                  help="Path to directory containing JSON coordinate files.")
-    subparser_ldist.add_argument("--thesis_dir", type=str, default=None,
+    subparser_ldist.add_argument("--thesis-dir", type=str, default=None,
                                  help="Path to thesis document folder. Default: auto-detected.")
     subparser_ldist.set_defaults(func=module_grapher.label_dist)
 
@@ -279,7 +293,7 @@ def main() -> None:
     )
     subparser_spear.add_argument("--directory", type=str, required=True,
                                  help="Path to directory containing JSON coordinate files.")
-    subparser_spear.add_argument("--thesis_dir", type=str, default=None,
+    subparser_spear.add_argument("--thesis-dir", type=str, default=None,
                                  help="Path to thesis document folder. Default: auto-detected.")
     subparser_spear.set_defaults(func=module_data.compute_spearman)
 
@@ -293,7 +307,7 @@ def main() -> None:
     )
     subparser_sysout.add_argument("--directory", type=str, required=True,
                                   help="Path to directory containing JSON coordinate files.")
-    subparser_sysout.add_argument("--thesis_dir", type=str, default=None,
+    subparser_sysout.add_argument("--thesis-dir", type=str, default=None,
                                   help="Path to thesis document folder. Default: auto-detected.")
     subparser_sysout.set_defaults(func=module_grapher.sys_output)
 
@@ -307,7 +321,7 @@ def main() -> None:
     )
     subparser_dstats.add_argument("--directory", type=str, required=True,
                                   help="Path to directory containing JSON coordinate files.")
-    subparser_dstats.add_argument("--thesis_dir", type=str, default=None,
+    subparser_dstats.add_argument("--thesis-dir", type=str, default=None,
                                   help="Path to thesis document folder. Default: auto-detected.")
     subparser_dstats.set_defaults(func=module_data.dataset_stats)
 
@@ -318,13 +332,13 @@ def main() -> None:
         "thesisMosaic",
         help="Generate dataset mosaic: video frame + trajectories per quality class.",
         epilog=('Example: python main.py thesisMosaic '
-                '--clips_dir "../Videos/Clips" --coords_dir "../Coordinates"')
+                '--clips-dir "../Videos/Clips" --coords-dir "../Coordinates"')
     )
-    subparser_mosaic.add_argument("--clips_dir", type=str, required=True,
+    subparser_mosaic.add_argument("--clips-dir", type=str, required=True,
                                   help="Path to directory containing .mp4 video clips.")
-    subparser_mosaic.add_argument("--coords_dir", type=str, required=True,
+    subparser_mosaic.add_argument("--coords-dir", type=str, required=True,
                                   help="Path to directory containing JSON coordinate files.")
-    subparser_mosaic.add_argument("--thesis_dir", type=str, default=None,
+    subparser_mosaic.add_argument("--thesis-dir", type=str, default=None,
                                   help="Path to thesis document folder. Default: auto-detected.")
     subparser_mosaic.set_defaults(func=module_grapher.dataset_mosaic)
 
@@ -334,11 +348,11 @@ def main() -> None:
     subparser_traj = subparsers.add_parser(
         "thesisTrajectories",
         help="Generate labeled trajectory figures for Very Low, Medium, and Excellent clips.",
-        epilog='Example: python main.py thesisTrajectories --coords_dir "../Coordinates"'
+        epilog='Example: python main.py thesisTrajectories --coords-dir "../Coordinates"'
     )
-    subparser_traj.add_argument("--coords_dir", type=str, required=True,
+    subparser_traj.add_argument("--coords-dir", type=str, required=True,
                                 help="Path to directory containing JSON coordinate files.")
-    subparser_traj.add_argument("--thesis_dir", type=str, default=None,
+    subparser_traj.add_argument("--thesis-dir", type=str, default=None,
                                 help="Path to thesis document folder. Default: auto-detected.")
     subparser_traj.set_defaults(func=module_grapher.thesis_trajectories)
 
@@ -352,9 +366,9 @@ def main() -> None:
     )
     subparser_gif.add_argument("--file", type=str, required=True,
                                help="Path to a JSON coordinate file.")
-    subparser_gif.add_argument("--out_dir", type=str, default=None,
+    subparser_gif.add_argument("--out-dir", type=str, default=None,
                                help="Output directory for the GIF. Default: thesis Methodology/.")
-    subparser_gif.add_argument("--thesis_dir", type=str, default=None,
+    subparser_gif.add_argument("--thesis-dir", type=str, default=None,
                                help="Path to thesis document folder. Default: auto-detected.")
     subparser_gif.set_defaults(func=module_grapher.save_animation_gif)
 

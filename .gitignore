@@ -22,3 +22,6 @@ Thumbs.db
 
 # Old Coordinates
 coordinates_2025/
+
+# Local pose-estimation scratch outputs
+tmp_pose_test/

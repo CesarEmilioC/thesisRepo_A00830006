@@ -170,10 +170,10 @@ python main.py countGrades --directory "../Coordinates"
 
 ### Step 5: Train the LSTM Model
 ```bash
-python main.py trainLSTM --directory "../Coordinates" --run_name Test01 --model_path "Models/lstm_model.h5"
+python main.py trainLSTM --directory "../Coordinates"
 ```
 
 ### Step 6: Predict a Clip's Quality Class
 ```bash
-python main.py predictLSTM --file "../Samples/coordinateSamples/player10_part1_clip0_grade7.json" --model_path "Models/lstm_model.h5"
+python main.py predictLSTM --file "../Samples/coordinateSamples/player10_part1_clip0_grade7.json" --model-path "Models/lstm_model.h5"
 ```

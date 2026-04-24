@@ -1007,8 +1007,8 @@ def dataset_mosaic(args: argparse.Namespace) -> None:
     Output: {thesis_dir}/Images/Experimentation/dataset_mosaic.png
 
     CLI usage:
-        python main.py thesisMosaic --clips_dir "../Videos/Clips" \\
-               --coords_dir "../Coordinates" [--thesis_dir "..."]
+        python main.py thesisMosaic --clips-dir "../Videos/Clips" \\
+               --coords-dir "../Coordinates" [--thesis-dir "..."]
     """
     matplotlib.use('Agg')
 
@@ -1168,8 +1168,8 @@ def thesis_trajectories(args: argparse.Namespace) -> None:
     Output directory: {thesis_dir}/Images/Methodology/
 
     CLI usage:
-        python main.py thesisTrajectories --coords_dir "../Coordinates" \\
-               [--thesis_dir "..."]
+        python main.py thesisTrajectories --coords-dir "../Coordinates" \\
+               [--thesis-dir "..."]
     """
     matplotlib.use('Agg')
 
@@ -1345,7 +1345,7 @@ def save_animation_gif(args: argparse.Namespace) -> None:
 
     CLI usage:
         python main.py saveAnimation --file "../Coordinates/player10/..."
-               [--out_dir "path/to/output"] [--thesis_dir "..."]
+               [--out-dir "path/to/output"] [--thesis-dir "..."]
     """
     matplotlib.use('Agg')
 

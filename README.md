@@ -183,11 +183,16 @@ Arguments:
 - `--video`: Path to a single video file (.mp4).
 - `--directory`: Path to a folder containing multiple .mp4 files.
 - `--model`: OpenPose model type (`mobilenet_thin`, `cmu`, etc.). Default: `mobilenet_thin`.
-- `--show_video`: Display the video window during processing.
+- `--show-video`: Display the video window during processing.
+- `--show-process`: Print pose estimation details during processing.
 - `--resize`: Input resolution for OpenPose (e.g., `'432x368'`). Default: native resolution.
 - `--resize-out-ratio`: Upsample ratio for OpenPose inference. Default: `4.0`.
+- `--output-dir`: Directory where the JSON (and optional mosaic) is saved. When provided, the output is written **flat** (no `player{N}/part{M}` subfolders). Default: `../Coordinates/player{N}/part{M}/`.
+- `--save-frames-mosaic`: Save a mosaic figure with up to 5 evenly-spaced frames where all 4 joints (pelvis, left shoulder, right elbow, right wrist) were simultaneously detected. Includes a color legend per joint. Saved alongside the JSON as `{clip_name}_frames_mosaic.png`.
 
-Output: JSON coordinate files saved to `Coordinates/player{N}/part{M}/` (subdirectories are created automatically).
+> **CLI conventions:** all multi-word flags use **kebab-case** (dashes), e.g. `--show-video`, `--model-path`, `--thesis-dir`, `--clips-dir`, `--coords-dir`, `--out-dir`, `--output-dir`, `--save-frames-mosaic`. argparse maps these to `args.show_video`, `args.model_path`, etc. internally.
+
+Output: JSON coordinate files saved to `Coordinates/player{N}/part{M}/` (subdirectories are created automatically), unless `--output-dir` overrides the destination.
 
 #### Skip Existing Files
 
@@ -425,7 +430,7 @@ python main.py sysOutput --directory "../Coordinates"
 python main.py datasetStats --directory "../Coordinates"
 ```
 
-All five commands accept an optional `--thesis_dir` argument to override the default thesis folder path.
+All five commands accept an optional `--thesis-dir` argument to override the default thesis folder path.
 
 **Requirements:** `tf_keras` must be installed (`pip install tf_keras`) to load LSTM and GRU models saved in Keras 2 format.
 
@@ -439,15 +444,15 @@ These commands generate publication-ready figures for the thesis Dataset and Met
 ```bash
 cd Source
 python main.py thesisMosaic \
-  --clips_dir "/path/to/Videos/Clips" \
-  --coords_dir "../Coordinates"
+  --clips-dir "/path/to/Videos/Clips" \
+  --coords-dir "../Coordinates"
 ```
 Output: `Images/Experimentation/dataset_mosaic.png` — a 5-row × 2-column figure. The left column shows a representative video frame for each quality class at its natural aspect ratio (no stretching); the right column shows the vertical joint displacements (wrist, elbow, shoulder) relative to the pelvis over the clip's frames. All frame annotations include the clip filename, player ID, and grade.
 
 **Generate labeled trajectory figures** for Very Low, Medium, and Excellent representative clips:
 ```bash
 cd Source
-python main.py thesisTrajectories --coords_dir "../Coordinates"
+python main.py thesisTrajectories --coords-dir "../Coordinates"
 ```
 Outputs (saved to `Images/Methodology/`):
 - `trajectory_temporal_{clip_name}.png` — X/Y over frame for wrist, elbow, and shoulder (all relative to pelvis). One file per clip.
@@ -465,7 +470,7 @@ python main.py saveAnimation \
 ```
 Output: `{clip_name}_animation.gif` saved to `Images/Methodology/` by default. The animation shows the Pelvis → Shoulder → Elbow → Wrist kinematic chain with motion trails, at a reduced playback speed (controlled by `ANIMATION_PLAYBACK_SPEED` in `config.py`). Requires `Pillow` (`pip install Pillow`).
 
-All three commands accept an optional `--thesis_dir` argument to override the default thesis folder path. `thesisMosaic` additionally accepts `--clips_dir` (required, path to the video clips folder outside the repo).
+All three commands accept an optional `--thesis-dir` argument to override the default thesis folder path. `thesisMosaic` additionally accepts `--clips-dir` (required, path to the video clips folder outside the repo).
 
 ---
 

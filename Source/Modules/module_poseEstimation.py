@@ -42,6 +42,37 @@ from openPoseRequirements.tf_pose.estimator import TfPoseEstimator
 from openPoseRequirements.tf_pose.networks import get_graph_path, model_wh
 
 
+# BGR colors used to draw detected joints on video frames (OpenCV convention).
+_JOINT_COLORS_BGR = {
+    "Pelvis":        (0, 255, 0),       # green
+    "Left Shoulder": (255, 150, 0),     # blue
+    "Right Elbow":   (0, 255, 255),     # yellow
+    "Right Wrist":   (0, 0, 255),       # red
+}
+
+
+def _resolve_output_dir(args: argparse.Namespace, video_name: str) -> str:
+    """Return the directory where the JSON (and optional mosaic) for a clip should be saved.
+
+    If ``args.output_dir`` is provided, the clip is saved flat in that directory
+    (no ``player{N}/part{M}`` nesting). Otherwise the default nesting under
+    ``config.COORDINATES_DIR`` is applied when the filename matches the naming
+    convention.
+    """
+    output_dir = getattr(args, 'output_dir', None)
+    if output_dir:
+        return os.path.abspath(output_dir)
+
+    match = re.match(config.FILENAME_REGEX, video_name)
+    if match:
+        return os.path.join(
+            config.COORDINATES_DIR,
+            f"player{match.group(1)}",
+            f"part{match.group(2)}",
+        )
+    return config.COORDINATES_DIR
+
+
 # ============================================================================================
 # VIDEO -> POSE ESTIMATION -> JSON COORDINATES
 # ============================================================================================
@@ -130,22 +161,19 @@ def analyze_video(video_path: str, args: argparse.Namespace, show_video: bool = 
     - Missing keypoints (except pelvis) are interpolated linearly between valid frames.
     """
 
-    # Check if JSON already exists for this clip -- skip if so
+    # Check if JSON already exists for this clip -- skip if so.
+    # The save directory honors --output-dir (flat) when provided, else falls
+    # back to the default player/part nesting under config.COORDINATES_DIR.
     video_name = os.path.basename(video_path).replace(".mp4", "")
-    match_check = re.match(config.FILENAME_REGEX, video_name)
-    if match_check:
-        expected_path = os.path.join(
-            config.COORDINATES_DIR,
-            f"player{match_check.group(1)}",
-            f"part{match_check.group(2)}",
-            f"{video_name}.json"
-        )
-    else:
-        expected_path = os.path.join(config.COORDINATES_DIR, f"{video_name}.json")
+    save_dir = _resolve_output_dir(args, video_name)
+    expected_path = os.path.join(save_dir, f"{video_name}.json")
 
     if os.path.isfile(expected_path):
         print(f"[SKIP] Coordinate file already exists: {expected_path}")
         return
+
+    save_frames_mosaic = bool(getattr(args, 'save_frames_mosaic', False))
+    complete_frames: List[Tuple[int, "np.ndarray"]] = []  # frames where all 4 joints were detected
 
     logger = logging.getLogger('TfPoseEstimator')
 
@@ -178,10 +206,12 @@ def analyze_video(video_path: str, args: argparse.Namespace, show_video: bool = 
     raw_wrist = []
     raw_timestamps = []
 
+    frame_counter = 0
     while True:
         ret, frame = cam.read()
         if not ret:
             break
+        frame_counter += 1
 
         timestamp_sec = cam.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
         rw, rh = model_wh(args.resize)
@@ -228,6 +258,21 @@ def analyze_video(video_path: str, args: argparse.Namespace, show_video: bool = 
                     raw_elbow.append(elbow_abs)
                     raw_wrist.append(wrist_abs)
                     raw_timestamps.append(timestamp_sec)
+
+                    # If requested, capture frames where all 4 joints were
+                    # detected in the same frame (no NaNs) so they can be
+                    # later assembled into a per-clip mosaic figure.
+                    if save_frames_mosaic and shoulder and elbow and wrist:
+                        annotated = frame.copy()
+                        joints_img = (
+                            ("Pelvis",        (int(pelvis.x   * W), int(pelvis.y   * H))),
+                            ("Left Shoulder", (int(shoulder.x * W), int(shoulder.y * H))),
+                            ("Right Elbow",   (int(elbow.x    * W), int(elbow.y    * H))),
+                            ("Right Wrist",   (int(wrist.x    * W), int(wrist.y    * H))),
+                        )
+                        for name, pt in joints_img:
+                            cv2.circle(annotated, pt, 10, _JOINT_COLORS_BGR[name], -1)
+                        complete_frames.append((frame_counter, annotated))
 
         if show_video:
             # Draw our 4 tracked keypoints on the frame
@@ -285,9 +330,6 @@ def analyze_video(video_path: str, args: argparse.Namespace, show_video: bool = 
         elbow_rel.append((elbow_interp[i][0] - px, elbow_interp[i][1] - py))
         wrist_rel.append((wrist_interp[i][0] - px, wrist_interp[i][1] - py))
 
-    # Build metadata
-    video_name = os.path.basename(video_path).replace(".mp4", "")
-
     # Trim video_path to start from "Videos/" if present
     full_path_fwd = video_path.replace("\\", "/")
     videos_idx = full_path_fwd.lower().find("/videos/")
@@ -343,15 +385,8 @@ def analyze_video(video_path: str, args: argparse.Namespace, show_video: bool = 
         "total_coordinates": total_detected
     }
 
-    # Save JSON result -- create subdirectories based on player/part if available
-    if metadata["player_id"] is not None and metadata["part"] is not None:
-        save_dir = os.path.join(
-            config.COORDINATES_DIR,
-            f"player{metadata['player_id']}",
-            f"part{metadata['part']}"
-        )
-    else:
-        save_dir = config.COORDINATES_DIR
+    # Save JSON result. The output directory was already resolved at the top of
+    # this function (honors --output-dir; otherwise applies player/part nesting).
     os.makedirs(save_dir, exist_ok=True)
 
     save_path = os.path.join(save_dir, f"{video_name}.json")
@@ -360,6 +395,64 @@ def analyze_video(video_path: str, args: argparse.Namespace, show_video: bool = 
 
     print(f"[INFO] Saved coordinates JSON -> {save_path} "
           f"({total_detected} frames, {total_interpolated} interpolated keypoint-frames)")
+
+    if save_frames_mosaic:
+        _save_frames_mosaic(complete_frames, video_name, save_dir)
+
+def _save_frames_mosaic(complete_frames: List[Tuple[int, "np.ndarray"]],
+                        video_name: str, save_dir: str) -> None:
+    """Save up to 5 evenly-spaced frames where all 4 joints were detected.
+
+    The figure is saved as ``{video_name}_frames_mosaic.png`` inside
+    ``save_dir``. A legend mapping each color to its joint name is included.
+    """
+    if not complete_frames:
+        print(f"[WARNING] No frames with all 4 joints detected for '{video_name}'. "
+              "Skipping mosaic generation.")
+        return
+
+    n_available = len(complete_frames)
+    n_selected = min(5, n_available)
+
+    if n_available <= 5:
+        selected = complete_frames
+    else:
+        indices = np.linspace(0, n_available - 1, n_selected).astype(int)
+        selected = [complete_frames[i] for i in indices]
+
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+
+    # Convert OpenCV BGR colors to matplotlib RGB tuples in [0, 1] for the legend.
+    legend_handles = [
+        Patch(facecolor=tuple(c / 255.0 for c in reversed(_JOINT_COLORS_BGR[name])),
+              edgecolor='black', label=name)
+        for name in ("Pelvis", "Left Shoulder", "Right Elbow", "Right Wrist")
+    ]
+
+    fig, axes = plt.subplots(1, n_selected, figsize=(3.2 * n_selected, 4.5))
+    if n_selected == 1:
+        axes = [axes]
+
+    for ax, (frame_idx, bgr) in zip(axes, selected):
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        ax.imshow(rgb)
+        ax.set_title(f"Frame {frame_idx}", fontsize=10)
+        ax.axis('off')
+
+    fig.suptitle(f"Detected Keypoints — {video_name}", fontsize=12, fontweight='bold')
+    fig.legend(handles=legend_handles, loc='lower center', ncol=4,
+               bbox_to_anchor=(0.5, 0.02), frameon=False, fontsize=10)
+    fig.tight_layout(rect=[0, 0.07, 1, 0.93])
+
+    os.makedirs(save_dir, exist_ok=True)
+    out_path = os.path.join(save_dir, f"{video_name}_frames_mosaic.png")
+    fig.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
+    print(f"[INFO] Saved frames mosaic -> {out_path} "
+          f"({n_selected} of {n_available} fully-detected frames)")
+
 
 def run_json_analysis(args: argparse.Namespace) -> None:
     """Analyze one or multiple coordinate JSONs to compute the ratio of valid frames

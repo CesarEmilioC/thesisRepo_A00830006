@@ -150,7 +150,7 @@ def predict_clip(args):
 
     model_path = args.model_path if args.model_path else config.get_latest_model("gruModel")
     if not model_path or not os.path.isfile(model_path):
-        print(f"[ERROR] Model file not found. Train a model first or specify --model_path.")
+        print(f"[ERROR] Model file not found. Train a model first or specify --model-path.")
         return -1
 
     model = load_model(model_path)
