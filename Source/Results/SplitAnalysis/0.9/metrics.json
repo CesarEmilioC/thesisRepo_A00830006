@@ -1,0 +1,12 @@
+{
+    "loss": "sparse_categorical_crossentropy",
+    "optimizer": "adam",
+    "accuracy": 0.2857142857142857,
+    "macro_f1": 0.2356017316017316,
+    "weighted_f1": 0.2813464086933475,
+    "spearman_rho": 0.05359802467493984,
+    "p_value": 0.714541379507498,
+    "n_train": 1305,
+    "n_test": 49,
+    "epochs_run": 100
+}
