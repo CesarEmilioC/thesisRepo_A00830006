@@ -541,6 +541,7 @@ Outputs (`Source/Results/SensitivityAnalysis/`):
 ```
 SensitivityAnalysis/
 |-- A_xent_adam/  +-- B_mse_adam/  +-- C_xent_sgd/  +-- D_mse_sgd/
+|       |-- lstm_model.h5                # the trained BiLSTM for this run
 |       |-- learning_curves.png
 |       |-- confusion_matrix.png
 |       |-- class_distribution.png
@@ -550,6 +551,8 @@ SensitivityAnalysis/
 |-- learning_curves_overlay.png          # 4 val_loss curves superposed
 +-- summary.csv                          # one row per run
 ```
+
+The best run (by accuracy, tiebreak macro F1 then Spearman ρ) is auto-copied to `Source/Models/lstmModel_Sens_<run_id>_<DD-MM-YYYY>.h5` so it can be loaded with `predictLSTM --model-path …` like any other trained BiLSTM.
 
 **Multi-split analysis** — repeats the BiLSTM training across train
 fractions `[0.5, 0.6, 0.7, 0.8, 0.9]` with cross-entropy + Adam (the
@@ -565,10 +568,12 @@ Outputs (`Source/Results/SplitAnalysis/`):
 ```
 SplitAnalysis/
 |-- 0.5/  +-- 0.6/  +-- 0.7/  +-- 0.8/  +-- 0.9/
-|       +-- (same six artifacts as the grid runs above)
+|       +-- (same seven artifacts as the grid runs above, including lstm_model.h5)
 |-- summary.csv          # train_frac, n_train, n_test, accuracy, macro_f1, spearman_rho, p_value
 +-- trend_plot.png       # accuracy and macro F1 vs train fraction
 ```
+
+The best fraction (by accuracy, tiebreak macro F1 then Spearman ρ) is auto-copied to `Source/Models/lstmModel_Split<NN>_<DD-MM-YYYY>.h5` (e.g. `lstmModel_Split60_…h5` if `train_frac=0.6` wins).
 
 Both commands take the same `--directory` argument as `trainLSTM` and
 do not touch the GRU/TCN trainers.

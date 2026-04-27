@@ -35,8 +35,10 @@ architecture) are kept identical to LSTM Test03.
 import os
 import json
 import random
+import shutil
 import argparse
 import numpy as np
+from datetime import datetime
 from collections import Counter
 
 import matplotlib.pyplot as plt
@@ -243,6 +245,10 @@ def _train_and_evaluate(X_train, X_test, y_train, y_test,
     )
 
     # ---------- artifacts ----------
+    model_path = os.path.join(run_dir, 'lstm_model.h5')
+    model.save(model_path)
+    print(f"[INFO] Model saved to {model_path}")
+
     history_path = os.path.join(run_dir, 'history.json')
     serial = {k: [float(v) for v in vals] for k, vals in history.history.items()}
     with open(history_path, 'w') as f:
@@ -386,6 +392,25 @@ def run_sensitivity(args: argparse.Namespace) -> None:
                     f"{r['spearman_rho']:.4f},{r['p_value']:.4f}\n")
     print(f"[INFO] summary.csv -> {csv_path}")
 
+    # ---- promote winner to Source/Models/ ----
+    winner = max(summary_rows,
+                 key=lambda r: (r['accuracy'], r['macro_f1'], r['spearman_rho']))
+    src = os.path.join(base_dir, winner['run_id'], 'lstm_model.h5')
+    if os.path.exists(src):
+        os.makedirs(config.MODELS_DIR, exist_ok=True)
+        date_full = datetime.now().strftime("%d-%m-%Y")
+        dst = os.path.join(
+            config.MODELS_DIR,
+            f"lstmModel_Sens_{winner['run_id']}_{date_full}.h5"
+        )
+        shutil.copy2(src, dst)
+        print(f"[OK] Sensitivity winner = {winner['run_id']} "
+              f"(acc {winner['accuracy']:.4f}, macro_f1 {winner['macro_f1']:.4f}, "
+              f"rho {winner['spearman_rho']:.4f})")
+        print(f"[OK] Promoted to {dst}")
+    else:
+        print(f"[WARN] Winner model not found at {src}; skipping promotion.")
+
 
 # ============================================================
 # EXPERIMENT 2 - MULTI-SPLIT ANALYSIS
@@ -465,3 +490,24 @@ def run_split_analysis(args: argparse.Namespace) -> None:
     plt.savefig(trend_path, dpi=config.PLOT_DPI)
     plt.close()
     print(f"[INFO] trend_plot.png -> {trend_path}")
+
+    # ---- promote winner to Source/Models/ ----
+    winner = max(summary_rows,
+                 key=lambda r: (r['accuracy'], r['macro_f1'], r['spearman_rho']))
+    winner_dir = f"{winner['train_frac']:.1f}"
+    src = os.path.join(base_dir, winner_dir, 'lstm_model.h5')
+    if os.path.exists(src):
+        os.makedirs(config.MODELS_DIR, exist_ok=True)
+        date_full = datetime.now().strftime("%d-%m-%Y")
+        frac_tag = f"{int(round(winner['train_frac']*100)):02d}"
+        dst = os.path.join(
+            config.MODELS_DIR,
+            f"lstmModel_Split{frac_tag}_{date_full}.h5"
+        )
+        shutil.copy2(src, dst)
+        print(f"[OK] Split winner = train_frac {winner['train_frac']:.2f} "
+              f"(acc {winner['accuracy']:.4f}, macro_f1 {winner['macro_f1']:.4f}, "
+              f"rho {winner['spearman_rho']:.4f})")
+        print(f"[OK] Promoted to {dst}")
+    else:
+        print(f"[WARN] Winner model not found at {src}; skipping promotion.")
