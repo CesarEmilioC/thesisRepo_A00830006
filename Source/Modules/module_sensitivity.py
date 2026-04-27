@@ -155,8 +155,19 @@ def _save_learning_curves(history, path: str) -> None:
 def _save_confusion_matrix(y_true, y_pred, valid_labels, target_names, path: str) -> None:
     cm = confusion_matrix(y_true, y_pred, labels=valid_labels)
     plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, cmap='Blues',
-                xticklabels=target_names, yticklabels=target_names)
+    ax = sns.heatmap(cm, annot=False, cmap='Blues',
+                     xticklabels=target_names, yticklabels=target_names)
+    # Render annotations manually so the text colour adapts to cell intensity
+    # (seaborn's auto contrast was leaving dark numbers on dark cells in this
+    # env; this loop guarantees readability for both light and dark cells).
+    threshold = cm.max() / 2.0 if cm.size else 0.0
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            v = int(cm[i, j])
+            ax.text(j + 0.5, i + 0.5, str(v),
+                    ha='center', va='center',
+                    color='white' if v > threshold else 'black',
+                    fontsize=12)
     plt.xlabel('Predicted'); plt.ylabel('True'); plt.title('Confusion Matrix')
     plt.tight_layout()
     plt.savefig(path, dpi=config.PLOT_DPI)
