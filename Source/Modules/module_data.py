@@ -188,12 +188,17 @@ def augment_sequences(sequences: List[np.ndarray], labels: List[int],
 
 def prepare_data(sequences: List[np.ndarray], labels: List[int],
                   max_len: int = config.MAX_SEQUENCE_LENGTH,
-                  augment: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                  augment: bool = True,
+                  test_size: float = 0.2,
+                  random_state: int = 42
+                  ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Normalize, pad, and split sequences into train/test sets.
 
     Grade labels (1-10) are mapped to 5 classes via config.grade_to_class().
     Augmentation is applied to the training set only (after splitting) to
-    prevent data leakage.
+    prevent data leakage. ``test_size`` and ``random_state`` are exposed so
+    the multi-split sensitivity analysis can vary the train fraction while
+    keeping the same canonical seed.
     """
     y_all = np.array([config.grade_to_class(g) for g in labels])
 
@@ -201,7 +206,8 @@ def prepare_data(sequences: List[np.ndarray], labels: List[int],
     stratify_val = y_all if min(counts.values()) >= 2 else None
 
     seq_train, seq_test, y_train, y_test = train_test_split(
-        sequences, y_all, test_size=0.2, random_state=42, stratify=stratify_val
+        sequences, y_all, test_size=test_size,
+        random_state=random_state, stratify=stratify_val
     )
 
     if augment:

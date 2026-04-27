@@ -1,0 +1,5 @@
+run_id,label,loss,optimizer,accuracy,macro_f1,spearman_rho,p_value
+A_xent_adam,CrossEntropy + Adam,sparse_categorical_crossentropy,adam,0.2680,0.2126,-0.0195,0.8496
+B_mse_adam,MSE + Adam,mse,adam,0.3505,0.2731,0.1048,0.3071
+C_xent_sgd,CrossEntropy + SGD(0.9),sparse_categorical_crossentropy,sgd,0.3505,0.2982,0.1946,0.0561
+D_mse_sgd,MSE + SGD(0.9),mse,sgd,0.2784,0.2342,0.0696,0.4979

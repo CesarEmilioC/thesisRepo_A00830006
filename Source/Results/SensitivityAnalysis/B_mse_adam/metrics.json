@@ -1,0 +1,12 @@
+{
+    "loss": "mse",
+    "optimizer": "adam",
+    "accuracy": 0.35051546391752575,
+    "macro_f1": 0.2731301600866818,
+    "weighted_f1": 0.34062452260569703,
+    "spearman_rho": 0.10476181551383568,
+    "p_value": 0.3071493395165151,
+    "n_train": 1161,
+    "n_test": 97,
+    "epochs_run": 100
+}

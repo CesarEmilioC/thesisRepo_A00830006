@@ -71,7 +71,8 @@ THESISREPO_A00830006/
 |   |   |-- module_LSTM.py            # Bidirectional LSTM model definition, training, and prediction
 |   |   |-- module_GRU.py             # Bidirectional GRU model definition, training, and prediction
 |   |   |-- module_TCN.py             # TCN model definition, training, and prediction
-|   |   +-- module_grapher.py         # Coordinate visualization, animation, and thesis plot generation
+|   |   |-- module_grapher.py         # Coordinate visualization, animation, and thesis plot generation
+|   |   +-- module_sensitivity.py     # BiLSTM sensitivity analyses (loss x optimizer grid, multi-split)
 |   |-- openPoseRequirements/       # TensorFlow-based OpenPose implementation
 |   +-- Results/                    # Training experiment outputs (timestamped)
 |
@@ -502,6 +503,75 @@ python main.py saveAnimation \
 Output: `{clip_name}_animation.gif` saved to `Images/Methodology/` by default. The animation shows the Pelvis → Shoulder → Elbow → Wrist kinematic chain with motion trails, at a reduced playback speed (controlled by `ANIMATION_PLAYBACK_SPEED` in `config.py`). Requires `Pillow` (`pip install Pillow`).
 
 All three commands accept an optional `--thesis-dir` argument to override the default thesis folder path. `thesisMosaic` additionally accepts `--clips-dir` (required, path to the video clips folder outside the repo).
+
+---
+
+### 14. BiLSTM Sensitivity Analyses
+
+These commands re-train the BiLSTM under controlled perturbations of the
+training recipe, holding everything else (architecture, augmentation,
+class weights, ReduceLROnPlateau, early stopping, seed) identical to
+`LSTM_Test03`. They are designed to quantify how robust the final
+result is to two specific design choices and to feed two ready-to-paste
+artifacts into the thesis defense.
+
+**Loss × Optimizer 2×2 grid** — runs four BiLSTM trainings:
+
+| Run id        | Loss                              | Optimizer          |
+|---------------|-----------------------------------|--------------------|
+| `A_xent_adam` | sparse categorical cross-entropy  | Adam (baseline)    |
+| `B_mse_adam`  | MSE on one-hot targets            | Adam               |
+| `C_xent_sgd`  | sparse categorical cross-entropy  | SGD (momentum 0.9) |
+| `D_mse_sgd`   | MSE on one-hot targets            | SGD (momentum 0.9) |
+
+```bash
+cd Source
+python main.py runSensitivity --directory "../Coordinates"
+```
+
+The MSE variants keep the 5-unit softmax output (architecture identical
+to the baseline) and use one-hot encoded labels, so only the loss
+function differs across the grid. Class weights from the baseline are
+applied as `sample_weight` derived from
+`compute_class_weight('balanced')`, which is mathematically equivalent
+to the `class_weight=` dict used by `trainLSTM`.
+
+Outputs (`Source/Results/SensitivityAnalysis/`):
+
+```
+SensitivityAnalysis/
+|-- A_xent_adam/  +-- B_mse_adam/  +-- C_xent_sgd/  +-- D_mse_sgd/
+|       |-- learning_curves.png
+|       |-- confusion_matrix.png
+|       |-- class_distribution.png
+|       |-- classification_report.json   # precision/recall/f1 per class + macro/weighted
+|       |-- metrics.json                 # accuracy, macro_f1, weighted_f1, spearman_rho, p_value
+|       +-- history.json                 # loss/val_loss/accuracy/val_accuracy per epoch
+|-- learning_curves_overlay.png          # 4 val_loss curves superposed
++-- summary.csv                          # one row per run
+```
+
+**Multi-split analysis** — repeats the BiLSTM training across train
+fractions `[0.5, 0.6, 0.7, 0.8, 0.9]` with cross-entropy + Adam (the
+baseline recipe), keeping the stratified split and the same seed:
+
+```bash
+cd Source
+python main.py runSplitAnalysis --directory "../Coordinates"
+```
+
+Outputs (`Source/Results/SplitAnalysis/`):
+
+```
+SplitAnalysis/
+|-- 0.5/  +-- 0.6/  +-- 0.7/  +-- 0.8/  +-- 0.9/
+|       +-- (same six artifacts as the grid runs above)
+|-- summary.csv          # train_frac, n_train, n_test, accuracy, macro_f1, spearman_rho, p_value
++-- trend_plot.png       # accuracy and macro F1 vs train fraction
+```
+
+Both commands take the same `--directory` argument as `trainLSTM` and
+do not touch the GRU/TCN trainers.
 
 ---
 

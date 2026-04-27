@@ -134,6 +134,7 @@ All three models share the same data pipeline, augmentation, class weights, opti
 | `module_GRU.py`            | Bidirectional GRU definition, training, prediction                | `trainGRU`, `predictGRU`      |
 | `module_TCN.py`            | TCN definition (dilated causal convolutions), training, prediction| `trainTCN`, `predictTCN`      |
 | `module_grapher.py`        | Coordinate visualization, animation, and thesis-figure generation | `plot`, `animate`, thesis cmds |
+| `module_sensitivity.py`    | BiLSTM sensitivity analyses: 2x2 loss x optimizer grid, multi-split | `runSensitivity`, `runSplitAnalysis` |
 
 ---
 
@@ -152,6 +153,8 @@ All three models share the same data pipeline, augmentation, class weights, opti
 6. **Visualization**: The `plot` and `animate` commands generate static plots and animated GIFs of movement patterns from coordinate data. Supports both 3-keypoint (legacy) and 4-keypoint (current, with shoulder) JSON formats.
 
 7. **Thesis artifacts**: A set of CLI commands (`regenPlots`, `labelDist`, `spearman`, `sysOutput`, `datasetStats`, `thesisMosaic`) regenerate publication-ready figures and statistics from saved training artifacts, without retraining.
+
+8. **Sensitivity analyses**: `runSensitivity` re-trains the BiLSTM on a 2×2 grid of `{cross-entropy, MSE} × {Adam, SGD(0.9)}` while holding architecture, augmentation, class weights, callbacks, and seed identical to `LSTM_Test03`. `runSplitAnalysis` repeats the BiLSTM training across train fractions `[0.5, 0.6, 0.7, 0.8, 0.9]` with the baseline recipe. Outputs land in `Source/Results/SensitivityAnalysis/` and `Source/Results/SplitAnalysis/`, each with per-run learning curves, confusion matrices, JSON reports, and a comparison summary CSV plus a combined plot.
 
 ---
 

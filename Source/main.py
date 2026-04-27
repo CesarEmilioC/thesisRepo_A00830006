@@ -28,6 +28,8 @@ functionality through subcommands:
     thesisMosaic        Generate dataset mosaic (video frame + trajectories per class).
     thesisTrajectories  Generate labeled trajectory figures for Very Low/Medium/Excellent.
     saveAnimation       Save the motion animation for one clip as an animated GIF.
+    runSensitivity      Loss x Optimizer 2x2 sensitivity grid for the BiLSTM.
+    runSplitAnalysis    BiLSTM training across train fractions [0.5..0.9].
 
 Usage examples:
     python main.py pose --video "../Samples/clipSamples/player10_part1_clip0_grade7.mp4"
@@ -75,6 +77,7 @@ import Modules.module_data as module_data
 import Modules.module_LSTM as module_LSTM
 import Modules.module_GRU as module_GRU
 import Modules.module_TCN as module_TCN
+import Modules.module_sensitivity as module_sensitivity
 
 
 def main() -> None:
@@ -371,6 +374,30 @@ def main() -> None:
     subparser_gif.add_argument("--thesis-dir", type=str, default=None,
                                help="Path to thesis document folder. Default: auto-detected.")
     subparser_gif.set_defaults(func=module_grapher.save_animation_gif)
+
+    # ---------------------------------------------------
+    # SENSITIVITY ANALYSIS - LOSS x OPTIMIZER GRID
+    # ---------------------------------------------------
+    subparser_sens = subparsers.add_parser(
+        "runSensitivity",
+        help="BiLSTM 2x2 sensitivity grid (loss x optimizer).",
+        epilog='Example: python main.py runSensitivity --directory "../Coordinates"'
+    )
+    subparser_sens.add_argument("--directory", type=str, required=True,
+                                help="Path to directory containing JSON coordinate files.")
+    subparser_sens.set_defaults(func=module_sensitivity.run_sensitivity)
+
+    # ---------------------------------------------------
+    # SENSITIVITY ANALYSIS - MULTI-SPLIT
+    # ---------------------------------------------------
+    subparser_split = subparsers.add_parser(
+        "runSplitAnalysis",
+        help="BiLSTM trained across train fractions [0.5, 0.6, 0.7, 0.8, 0.9].",
+        epilog='Example: python main.py runSplitAnalysis --directory "../Coordinates"'
+    )
+    subparser_split.add_argument("--directory", type=str, required=True,
+                                 help="Path to directory containing JSON coordinate files.")
+    subparser_split.set_defaults(func=module_sensitivity.run_split_analysis)
 
     # ---------------------------------------------------
     args = parser.parse_args()
