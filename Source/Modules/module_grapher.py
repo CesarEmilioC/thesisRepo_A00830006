@@ -841,7 +841,14 @@ def _find_representative_clips(coords_dir: str, clips_dir: str) -> list:
             player_id, _, _, grade = meta
             cls = config.grade_to_class(grade)
             rel = os.path.relpath(os.path.join(root, fname), coords_dir)
-            vid = os.path.join(clips_dir, rel.replace('.json', '.mp4'))
+            vid_nested = os.path.join(clips_dir, rel.replace('.json', '.mp4'))
+            vid_flat   = os.path.join(clips_dir, fname.replace('.json', '.mp4'))
+            if os.path.exists(vid_nested):
+                vid = vid_nested
+            elif os.path.exists(vid_flat):
+                vid = vid_flat
+            else:
+                vid = None
             buckets[cls].append({
                 'label':      config.CLASS_LABELS[cls],
                 'color':      _CLASS_COLORS[cls],
@@ -849,7 +856,7 @@ def _find_representative_clips(coords_dir: str, clips_dir: str) -> list:
                 'player_id':  player_id,
                 'clip_name':  os.path.splitext(fname)[0],
                 'json_path':  os.path.join(root, fname),
-                'video_path': vid if os.path.exists(vid) else None,
+                'video_path': vid,
             })
 
     result = []
